@@ -186,10 +186,22 @@ input[type="number"], textarea {
   color: var(--danger);
 }
 
-.tools, .template-grid {
+.tools {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.template-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.wide-action {
+  width: 100%;
+  margin-top: 8px;
+  background: rgba(93, 211, 158, 0.18);
 }
 
 .range-label {

@@ -2,13 +2,16 @@
 
 A realtime Three.js web app for planning ball-and-stick kids' fort builds before constructing them physically.
 
-The app is designed around the common commercial fort-kit pattern used by Tiny Thinkers-style toys: spherical connector balls plus equal-length rods/sticks. I could not verify a public official dimensional spec from search results, so the planner keeps the important practical constraint configurable: **one connector ball per joint and one equal-length stick per valid connection**. You can enter the number of balls/sticks in your own box and the app shows whether the design fits.
+The app is designed around the common commercial fort-kit pattern used by Tiny Thinkers-style toys: spherical connector balls with **18 possible socket angles** and **one fixed stick length**. The planner enforces that a rod can only connect two balls one stick-length apart, so square diagonals are rejected; triangles are built as equilateral triangles using the 60° socket directions.
 
 ## Features
 
 - Realtime Three.js 3D scene with orbit camera
 - Add, connect, move, and delete connector balls/sticks
-- Strict one-stick-length mode for equal-length rod kits
+- Multi-select balls, connect all valid selected pairs, and move selections together
+- WYSIWYG connection mode with semitransparent preview rods/endpoints
+- Fixed one-stick-length rods: no impossible square diagonals
+- 18-hole connector model with visible socket markers
 - Live bill of materials:
   - balls/connectors needed
   - sticks/rods needed

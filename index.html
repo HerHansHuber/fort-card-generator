@@ -36,8 +36,8 @@
           <div class="stats-grid">
             <div><strong id="balls-used">0</strong><span>balls</span></div>
             <div><strong id="sticks-used">0</strong><span>sticks</span></div>
-            <div><strong id="open-ends">0</strong><span>open ends</span></div>
-            <div><strong id="invalid-sticks">0</strong><span>off-length</span></div>
+            <div><strong id="open-ends">0</strong><span>open sockets</span></div>
+            <div><strong id="invalid-sticks">0</strong><span>invalid</span></div>
           </div>
           <div class="inventory">
             <label>Owned balls <input id="owned-balls" type="number" min="0" value="36" /></label>
@@ -49,11 +49,13 @@
         <section class="panel" aria-labelledby="build-title">
           <h2 id="build-title">Build tools</h2>
           <div class="tools" role="group" aria-label="Modes">
+            <button class="tool" data-mode="select">Select</button>
             <button class="tool active" data-mode="add">Add ball</button>
             <button class="tool" data-mode="connect">Connect</button>
             <button class="tool" data-mode="move">Move</button>
             <button class="tool danger" data-mode="delete">Delete</button>
           </div>
+          <button id="connect-selected" type="button" class="wide-action">Connect selected valid pairs</button>
 
           <label class="range-label">
             Build height level <strong id="height-label">0</strong>
@@ -61,18 +63,22 @@
           </label>
 
           <label class="checkbox-line">
-            <input id="strict-rods" type="checkbox" checked />
-            Require one-stick length connections
+            <input id="strict-rods" type="checkbox" checked disabled />
+            Equal-length rods enforced: no square diagonals
           </label>
 
           <p class="help" id="mode-help">
             Add mode: click the grid to place connector balls. Use height for upper levels.
+          </p>
+          <p class="help">
+            Connect mode is WYSIWYG: click a ball, then click a semitransparent preview rod/end. Shift-click or Select mode for multi-selection.
           </p>
         </section>
 
         <section class="panel" aria-labelledby="templates-title">
           <h2 id="templates-title">Quick structures</h2>
           <div class="template-grid">
+            <button data-template="triangle">Add triangle</button>
             <button data-template="cube">Add cube bay</button>
             <button data-template="tunnel">Add 3-bay tunnel</button>
             <button data-template="roof">Add pitched roof bay</button>

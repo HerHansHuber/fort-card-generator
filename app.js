@@ -1,6 +1,37 @@
 export const ROD_LENGTH = 1;
 export const ROD_TOLERANCE = 0.08;
-export const MAX_SOCKET_DEGREE = 8;
+export const SOCKET_ANGLE_TOLERANCE_DEG = 8;
+export const MAX_SOCKET_DEGREE = 18;
+
+const DEG = Math.PI / 180;
+
+function normalize(vector) {
+  const length = Math.hypot(vector.x, vector.y, vector.z) || 1;
+  return { x: vector.x / length, y: vector.y / length, z: vector.z / length };
+}
+
+function directionFromTheta(thetaDeg) {
+  const theta = thetaDeg * DEG;
+  return normalize({ x: Math.cos(theta), y: 0, z: Math.sin(theta) });
+}
+
+// 18-hole fort connector model:
+// - 12 radial sockets around the equator at 30° increments, enabling square and triangular ground plans.
+// - 6 vertical/roof sockets: straight up/down plus two mirrored 60° roof pitch pairs.
+// This is a practical Tiny Thinkers-style constraint model for equal-length stick fort kits.
+export const SOCKET_DIRECTIONS = [
+  ...Array.from({ length: 12 }, (_, index) => ({
+    id: `H${String(index * 30).padStart(3, '0')}`,
+    label: `${index * 30}° horizontal`,
+    vector: directionFromTheta(index * 30)
+  })),
+  { id: 'UP', label: 'vertical up', vector: normalize({ x: 0, y: 1, z: 0 }) },
+  { id: 'DOWN', label: 'vertical down', vector: normalize({ x: 0, y: -1, z: 0 }) },
+  { id: 'ROOF_X_UP', label: '60° roof +X up', vector: normalize({ x: 0.5, y: Math.sqrt(3) / 2, z: 0 }) },
+  { id: 'ROOF_X_DOWN', label: '60° roof -X down', vector: normalize({ x: -0.5, y: -Math.sqrt(3) / 2, z: 0 }) },
+  { id: 'ROOF_X_NEG_UP', label: '60° roof -X up', vector: normalize({ x: -0.5, y: Math.sqrt(3) / 2, z: 0 }) },
+  { id: 'ROOF_X_NEG_DOWN', label: '60° roof +X down', vector: normalize({ x: 0.5, y: -Math.sqrt(3) / 2, z: 0 }) }
+];
 
 export function createEmptyDesign() {
   return { nodes: [], sticks: [], nextNodeId: 1, nextStickId: 1 };
@@ -14,6 +45,10 @@ function roundCoord(value) {
   return Math.round(Number(value) * 1000) / 1000;
 }
 
+function normalizePosition(position) {
+  return { x: roundCoord(position.x), y: Math.max(0, roundCoord(position.y)), z: roundCoord(position.z) };
+}
+
 export function keyForPosition(position) {
   return [position.x, position.y, position.z].map((value) => roundCoord(value).toFixed(3)).join(',');
 }
@@ -22,16 +57,52 @@ export function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
+export function vectorBetween(a, b) {
+  const length = distance(a, b) || 1;
+  return { x: (b.x - a.x) / length, y: (b.y - a.y) / length, z: (b.z - a.z) / length };
+}
+
+export function dot(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+export function angleDeg(a, b) {
+  return Math.acos(Math.min(1, Math.max(-1, dot(normalize(a), normalize(b))))) / DEG;
+}
+
+export function nearestSocketDirection(vector) {
+  const normal = normalize(vector);
+  let best = SOCKET_DIRECTIONS[0];
+  let bestAngle = Infinity;
+  for (const socket of SOCKET_DIRECTIONS) {
+    const angle = angleDeg(normal, socket.vector);
+    if (angle < bestAngle) {
+      best = socket;
+      bestAngle = angle;
+    }
+  }
+  return { ...best, angle: bestAngle };
+}
+
 export function isOneRodLength(a, b, tolerance = ROD_TOLERANCE) {
   return Math.abs(distance(a, b) - ROD_LENGTH) <= tolerance;
 }
 
-export function addNode(design, position) {
-  const normalized = {
-    x: roundCoord(position.x),
-    y: Math.max(0, roundCoord(position.y)),
-    z: roundCoord(position.z)
+export function connectionAnalysis(a, b) {
+  const length = distance(a, b);
+  const forward = nearestSocketDirection(vectorBetween(a, b));
+  const backward = nearestSocketDirection(vectorBetween(b, a));
+  return {
+    length,
+    lengthOk: Math.abs(length - ROD_LENGTH) <= ROD_TOLERANCE,
+    socketOk: forward.angle <= SOCKET_ANGLE_TOLERANCE_DEG && backward.angle <= SOCKET_ANGLE_TOLERANCE_DEG,
+    fromSocket: forward,
+    toSocket: backward
   };
+}
+
+export function addNode(design, position) {
+  const normalized = normalizePosition(position);
   const existing = design.nodes.find((node) => keyForPosition(node.position) === keyForPosition(normalized));
   if (existing) return existing;
   const node = { id: design.nextNodeId++, position: normalized };
@@ -42,20 +113,60 @@ export function addNode(design, position) {
 export function moveNode(design, nodeId, position) {
   const node = design.nodes.find((item) => item.id === nodeId);
   if (!node) return null;
-  const snapped = {
-    x: roundToGrid(position.x),
-    y: Math.max(0, roundToGrid(position.y)),
-    z: roundToGrid(position.z)
-  };
-  const occupied = design.nodes.find((item) => item.id !== nodeId && keyForPosition(item.position) === keyForPosition(snapped));
+  const normalized = normalizePosition(position);
+  const occupied = design.nodes.find((item) => item.id !== nodeId && keyForPosition(item.position) === keyForPosition(normalized));
   if (occupied) return occupied;
-  node.position = snapped;
+  node.position = normalized;
   return node;
+}
+
+export function moveNodesByDelta(design, nodeIds, delta) {
+  const ids = new Set(nodeIds);
+  const moving = design.nodes.filter((node) => ids.has(node.id));
+  const proposed = new Map(moving.map((node) => [node.id, normalizePosition({
+    x: node.position.x + delta.x,
+    y: node.position.y + delta.y,
+    z: node.position.z + delta.z
+  })]));
+  for (const [id, position] of proposed) {
+    const occupied = design.nodes.find((node) => !ids.has(node.id) && keyForPosition(node.position) === keyForPosition(position));
+    if (occupied) return { ok: false, reason: `Move blocked: ball ${occupied.id} already occupies a target spot.` };
+    if (position.y < 0) return { ok: false, reason: 'Move blocked: balls cannot go below floor level.' };
+    const duplicate = [...proposed].find(([otherId, otherPosition]) => otherId !== id && keyForPosition(otherPosition) === keyForPosition(position));
+    if (duplicate) return { ok: false, reason: 'Move blocked: selected balls would overlap.' };
+  }
+  for (const node of moving) node.position = proposed.get(node.id);
+  return { ok: true, moved: moving.length };
 }
 
 export function removeNode(design, nodeId) {
   design.nodes = design.nodes.filter((node) => node.id !== nodeId);
   design.sticks = design.sticks.filter((stick) => stick.a !== nodeId && stick.b !== nodeId);
+}
+
+export function removeStick(design, stickId) {
+  design.sticks = design.sticks.filter((stick) => stick.id !== stickId);
+}
+
+export function getSocketUsage(design, nodeId) {
+  const node = design.nodes.find((item) => item.id === nodeId);
+  if (!node) return [];
+  return design.sticks.flatMap((stick) => {
+    if (stick.a !== nodeId && stick.b !== nodeId) return [];
+    const otherId = stick.a === nodeId ? stick.b : stick.a;
+    const other = design.nodes.find((item) => item.id === otherId);
+    if (!other) return [];
+    const socket = nearestSocketDirection(vectorBetween(node.position, other.position));
+    return [{ stickId: stick.id, socketId: socket.id, angle: socket.angle }];
+  });
+}
+
+export function getNodeDegree(design, nodeId) {
+  return design.sticks.filter((stick) => stick.a === nodeId || stick.b === nodeId).length;
+}
+
+export function hasFreeSocket(design, nodeId, socketId) {
+  return !getSocketUsage(design, nodeId).some((usage) => usage.socketId === socketId);
 }
 
 export function addStick(design, a, b, { strict = true } = {}) {
@@ -65,30 +176,66 @@ export function addStick(design, a, b, { strict = true } = {}) {
   if (!nodeA || !nodeB) return { ok: false, reason: 'Missing ball.' };
   const exists = design.sticks.find((stick) => (stick.a === a && stick.b === b) || (stick.a === b && stick.b === a));
   if (exists) return { ok: false, reason: 'These balls are already connected.' };
-  const length = distance(nodeA.position, nodeB.position);
-  const oneRod = Math.abs(length - ROD_LENGTH) <= ROD_TOLERANCE;
-  if (strict && !oneRod) {
-    return { ok: false, reason: `Off-length: ${length.toFixed(2)} rods. Move balls one rod apart or disable strict mode.` };
+  const analysis = connectionAnalysis(nodeA.position, nodeB.position);
+  if (strict && !analysis.lengthOk) {
+    return { ok: false, reason: `Off-length: ${analysis.length.toFixed(2)} rods. Toy sticks are all one length, so square diagonals cannot be connected.` };
   }
-  const stick = { id: design.nextStickId++, a, b, length: Number(length.toFixed(3)), valid: oneRod };
+  if (strict && !analysis.socketOk) {
+    return { ok: false, reason: `Off-angle: nearest 18-hole sockets miss by ${Math.min(analysis.fromSocket.angle, analysis.toSocket.angle).toFixed(1)}°.` };
+  }
+  if (strict && !hasFreeSocket(design, a, analysis.fromSocket.id)) {
+    return { ok: false, reason: `Ball ${a} socket ${analysis.fromSocket.label} is already used.` };
+  }
+  if (strict && !hasFreeSocket(design, b, analysis.toSocket.id)) {
+    return { ok: false, reason: `Ball ${b} socket ${analysis.toSocket.label} is already used.` };
+  }
+  const stick = {
+    id: design.nextStickId++,
+    a,
+    b,
+    length: Number(analysis.length.toFixed(3)),
+    valid: analysis.lengthOk && analysis.socketOk,
+    fromSocket: analysis.fromSocket.id,
+    toSocket: analysis.toSocket.id
+  };
   design.sticks.push(stick);
   return { ok: true, stick };
 }
 
-export function removeStick(design, stickId) {
-  design.sticks = design.sticks.filter((stick) => stick.id !== stickId);
-}
-
-export function getNodeDegree(design, nodeId) {
-  return design.sticks.filter((stick) => stick.a === nodeId || stick.b === nodeId).length;
+export function connectSelectedPairs(design, nodeIds, { strict = true } = {}) {
+  let added = 0;
+  const messages = [];
+  for (let i = 0; i < nodeIds.length; i += 1) {
+    for (let j = i + 1; j < nodeIds.length; j += 1) {
+      const result = addStick(design, nodeIds[i], nodeIds[j], { strict });
+      if (result.ok) added += 1;
+      else messages.push(result.reason);
+    }
+  }
+  return { added, messages };
 }
 
 export function calculateParts(design, inventory = {}) {
+  for (const stick of design.sticks) {
+    const a = design.nodes.find((node) => node.id === stick.a);
+    const b = design.nodes.find((node) => node.id === stick.b);
+    if (a && b) {
+      const analysis = connectionAnalysis(a.position, b.position);
+      stick.length = Number(analysis.length.toFixed(3));
+      stick.valid = analysis.lengthOk && analysis.socketOk;
+      stick.fromSocket = analysis.fromSocket.id;
+      stick.toSocket = analysis.toSocket.id;
+    }
+  }
   const balls = design.nodes.length;
   const sticks = design.sticks.length;
   const invalidSticks = design.sticks.filter((stick) => !stick.valid).length;
   const overloadedBalls = design.nodes.filter((node) => getNodeDegree(design, node.id) > MAX_SOCKET_DEGREE).length;
-  const openEnds = design.nodes.reduce((sum, node) => sum + Math.max(0, MAX_SOCKET_DEGREE - getNodeDegree(design, node.id)), 0);
+  const duplicateSockets = design.nodes.reduce((sum, node) => {
+    const usage = getSocketUsage(design, node.id);
+    return sum + Math.max(0, usage.length - new Set(usage.map((item) => item.socketId)).size);
+  }, 0);
+  const openEnds = design.nodes.reduce((sum, node) => sum + Math.max(0, MAX_SOCKET_DEGREE - new Set(getSocketUsage(design, node.id).map((item) => item.socketId)).size), 0);
   const ownedBalls = Number(inventory.balls ?? 0);
   const ownedSticks = Number(inventory.sticks ?? 0);
   return {
@@ -96,35 +243,50 @@ export function calculateParts(design, inventory = {}) {
     sticks,
     invalidSticks,
     overloadedBalls,
+    duplicateSockets,
     openEnds,
     ballShortage: Math.max(0, balls - ownedBalls),
     stickShortage: Math.max(0, sticks - ownedSticks),
-    withinInventory: balls <= ownedBalls && sticks <= ownedSticks && invalidSticks === 0
+    withinInventory: balls <= ownedBalls && sticks <= ownedSticks && invalidSticks === 0 && overloadedBalls === 0 && duplicateSockets === 0
   };
 }
 
 export function serializeDesign(design) {
-  return JSON.stringify({ version: 1, nodes: design.nodes, sticks: design.sticks }, null, 2);
+  return JSON.stringify({ version: 2, nodes: design.nodes, sticks: design.sticks }, null, 2);
 }
 
 export function deserializeDesign(json) {
   const parsed = typeof json === 'string' ? JSON.parse(json) : json;
   const design = createEmptyDesign();
-  design.nodes = (parsed.nodes || []).map((node) => ({ id: Number(node.id), position: { ...node.position } }));
+  design.nodes = (parsed.nodes || []).map((node) => ({ id: Number(node.id), position: normalizePosition(node.position) }));
   design.sticks = (parsed.sticks || []).map((stick) => ({
     id: Number(stick.id),
     a: Number(stick.a),
     b: Number(stick.b),
     length: Number(stick.length),
-    valid: Boolean(stick.valid)
+    valid: Boolean(stick.valid),
+    fromSocket: stick.fromSocket,
+    toSocket: stick.toSocket
   }));
   design.nextNodeId = Math.max(0, ...design.nodes.map((node) => node.id)) + 1;
   design.nextStickId = Math.max(0, ...design.sticks.map((stick) => stick.id)) + 1;
+  calculateParts(design);
   return design;
 }
 
 function addEdge(design, a, b) {
   addStick(design, a.id, b.id, { strict: true });
+}
+
+export function addEquilateralTriangle(design, origin = { x: 0, y: 0, z: 0 }) {
+  const o = origin;
+  const a = addNode(design, { x: o.x, y: o.y, z: o.z });
+  const b = addNode(design, { x: o.x + 1, y: o.y, z: o.z });
+  const c = addNode(design, { x: o.x + 0.5, y: o.y, z: o.z + Math.sqrt(3) / 2 });
+  addEdge(design, a, b);
+  addEdge(design, b, c);
+  addEdge(design, c, a);
+  return [a, b, c];
 }
 
 export function addCubeBay(design, origin = { x: 0, y: 0, z: 0 }) {
@@ -150,27 +312,16 @@ export function addTunnel(design, origin = { x: 0, y: 0, z: 0 }, bays = 3) {
 
 export function addPitchedRoofBay(design, origin = { x: 0, y: 1, z: 0 }) {
   const o = origin;
-  // Equilateral roof sides: each sloping roof rod is one rod long.
   const peakY = o.y + Math.sqrt(3) / 2;
-  const eaves = [
-    addNode(design, { x: o.x, y: o.y, z: o.z }),
-    addNode(design, { x: o.x + 1, y: o.y, z: o.z }),
-    addNode(design, { x: o.x, y: o.y, z: o.z + 1 }),
-    addNode(design, { x: o.x + 1, y: o.y, z: o.z + 1 })
-  ];
-  const peaks = [
-    addNode(design, { x: o.x + 0.5, y: peakY, z: o.z }),
-    addNode(design, { x: o.x + 0.5, y: peakY, z: o.z + 1 })
-  ];
-  addEdge(design, eaves[0], eaves[1]);
-  addEdge(design, eaves[2], eaves[3]);
-  addEdge(design, eaves[0], peaks[0]);
-  addEdge(design, eaves[1], peaks[0]);
-  addEdge(design, eaves[2], peaks[1]);
-  addEdge(design, eaves[3], peaks[1]);
-  addEdge(design, peaks[0], peaks[1]);
-  addEdge(design, eaves[0], eaves[2]);
-  addEdge(design, eaves[1], eaves[3]);
+  const left = addNode(design, { x: o.x, y: o.y, z: o.z });
+  const right = addNode(design, { x: o.x + 1, y: o.y, z: o.z });
+  const peak = addNode(design, { x: o.x + 0.5, y: peakY, z: o.z });
+  const leftBack = addNode(design, { x: o.x, y: o.y, z: o.z + 1 });
+  const rightBack = addNode(design, { x: o.x + 1, y: o.y, z: o.z + 1 });
+  const peakBack = addNode(design, { x: o.x + 0.5, y: peakY, z: o.z + 1 });
+  for (const pair of [[left, right], [left, peak], [right, peak], [leftBack, rightBack], [leftBack, peakBack], [rightBack, peakBack], [left, leftBack], [right, rightBack], [peak, peakBack]]) {
+    addEdge(design, pair[0], pair[1]);
+  }
 }
 
 function encodeForUrl(design) {
@@ -190,6 +341,7 @@ async function setupBrowserApp() {
   let selected = [];
   let meshes = new Map();
   let stickMeshes = new Map();
+  let previewMeshes = [];
 
   const canvas = document.querySelector('#scene');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -197,7 +349,7 @@ async function setupBrowserApp() {
   renderer.setClearColor(0x08111f, 1);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x08111f, 12, 30);
+  scene.fog = new THREE.Fog(0x08111f, 14, 32);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
   camera.position.set(5, 4, 6);
@@ -206,11 +358,11 @@ async function setupBrowserApp() {
   controls.target.set(1, 0.8, 1);
   controls.enableDamping = true;
 
-  const group = new THREE.Group();
-  scene.add(group);
+  const structureGroup = new THREE.Group();
+  const previewGroup = new THREE.Group();
+  scene.add(structureGroup, previewGroup);
 
-  const ambient = new THREE.HemisphereLight(0xffffff, 0x223344, 2.2);
-  scene.add(ambient);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 2.2));
   const sun = new THREE.DirectionalLight(0xffffff, 2.2);
   sun.position.set(4, 8, 6);
   scene.add(sun);
@@ -219,68 +371,121 @@ async function setupBrowserApp() {
   grid.position.set(0, -0.01, 0);
   scene.add(grid);
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(12, 12),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshBasicMaterial({ visible: false }));
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
   const ghost = new THREE.Mesh(
     new THREE.SphereGeometry(0.09, 24, 16),
-    new THREE.MeshStandardMaterial({ color: 0x52d1ff, transparent: true, opacity: 0.45 })
+    new THREE.MeshStandardMaterial({ color: 0x52d1ff, transparent: true, opacity: 0.42 })
   );
   scene.add(ghost);
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const ballGeometry = new THREE.SphereGeometry(0.105, 32, 20);
-  const ballMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.02 });
-  const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x5a3b00, roughness: 0.35 });
+  const ballGeometry = new THREE.SphereGeometry(0.16, 32, 20);
+  const socketGeometry = new THREE.SphereGeometry(0.025, 10, 8);
+  const ballMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.34, metalness: 0.02 });
+  const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x5a3b00, roughness: 0.32 });
+  const socketMaterial = new THREE.MeshStandardMaterial({ color: 0x132033, roughness: 0.6 });
+  const usedSocketMaterial = new THREE.MeshStandardMaterial({ color: 0x52d1ff, emissive: 0x0b3545, roughness: 0.4 });
   const stickMaterial = new THREE.MeshStandardMaterial({ color: 0x52d1ff, roughness: 0.42 });
   const badStickMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.42 });
+  const previewStickMaterial = new THREE.MeshStandardMaterial({ color: 0x5dd39e, roughness: 0.35, transparent: true, opacity: 0.42 });
+  const previewNewMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.35, transparent: true, opacity: 0.38 });
+  const previewBadMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.35, transparent: true, opacity: 0.34 });
 
   function setMessage(text) { document.querySelector('#message').textContent = text; }
-
   function nodeById(id) { return design.nodes.find((node) => node.id === id); }
+  function nodeAt(position) { return design.nodes.find((node) => keyForPosition(node.position) === keyForPosition(position)); }
 
-  function stickCylinderBetween(a, b, valid) {
+  function cylinderBetween(a, b, material, radius = 0.035) {
     const start = new THREE.Vector3(a.x, a.y, a.z);
     const end = new THREE.Vector3(b.x, b.y, b.z);
     const mid = start.clone().add(end).multiplyScalar(0.5);
     const length = start.distanceTo(end);
-    const geometry = new THREE.CylinderGeometry(0.035, 0.035, length, 18);
-    const mesh = new THREE.Mesh(geometry, valid ? stickMaterial : badStickMaterial);
+    const geometry = new THREE.CylinderGeometry(radius, radius, length, 18);
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(mid);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize());
     return mesh;
   }
 
+  function makeBallMesh(node) {
+    const root = new THREE.Group();
+    root.position.set(node.position.x, node.position.y, node.position.z);
+    root.userData = { type: 'node', id: node.id };
+    const shell = new THREE.Mesh(ballGeometry, selected.includes(node.id) ? selectedBallMaterial : ballMaterial);
+    shell.userData = { type: 'node', id: node.id };
+    root.add(shell);
+    const usedSockets = new Set(getSocketUsage(design, node.id).map((usage) => usage.socketId));
+    for (const socket of SOCKET_DIRECTIONS) {
+      const marker = new THREE.Mesh(socketGeometry, usedSockets.has(socket.id) ? usedSocketMaterial : socketMaterial);
+      marker.position.set(socket.vector.x * 0.165, socket.vector.y * 0.165, socket.vector.z * 0.165);
+      marker.userData = { type: 'node', id: node.id, socketId: socket.id };
+      root.add(marker);
+    }
+    return root;
+  }
+
+  function clearPreviews() {
+    for (const mesh of previewMeshes) previewGroup.remove(mesh);
+    previewMeshes = [];
+  }
+
+  function addPreviewMesh(mesh, payload) {
+    mesh.userData = { type: 'preview', ...payload };
+    previewGroup.add(mesh);
+    previewMeshes.push(mesh);
+  }
+
+  function buildConnectionPreviews() {
+    clearPreviews();
+    if (mode !== 'connect' || selected.length !== 1) return;
+    const from = nodeById(selected[0]);
+    if (!from) return;
+    for (const socket of SOCKET_DIRECTIONS) {
+      if (!hasFreeSocket(design, from.id, socket.id)) continue;
+      const targetPosition = normalizePosition({
+        x: from.position.x + socket.vector.x * ROD_LENGTH,
+        y: from.position.y + socket.vector.y * ROD_LENGTH,
+        z: from.position.z + socket.vector.z * ROD_LENGTH
+      });
+      if (targetPosition.y < 0) continue;
+      const existing = nodeAt(targetPosition);
+      const canUseExisting = existing ? hasFreeSocket(design, existing.id, nearestSocketDirection(vectorBetween(existing.position, from.position)).id) : true;
+      const material = canUseExisting ? (existing ? previewStickMaterial : previewNewMaterial) : previewBadMaterial;
+      const rod = cylinderBetween(from.position, targetPosition, material, 0.024);
+      addPreviewMesh(rod, { fromId: from.id, targetId: existing?.id, targetPosition, socketId: socket.id, enabled: canUseExisting });
+      const endpoint = new THREE.Mesh(new THREE.SphereGeometry(existing ? 0.105 : 0.085, 18, 12), material);
+      endpoint.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
+      addPreviewMesh(endpoint, { fromId: from.id, targetId: existing?.id, targetPosition, socketId: socket.id, enabled: canUseExisting });
+    }
+  }
+
   function refreshScene() {
-    for (const mesh of meshes.values()) group.remove(mesh);
-    for (const mesh of stickMeshes.values()) group.remove(mesh);
+    for (const mesh of meshes.values()) structureGroup.remove(mesh);
+    for (const mesh of stickMeshes.values()) structureGroup.remove(mesh);
     meshes = new Map();
     stickMeshes = new Map();
+    calculateParts(design);
 
     for (const stick of design.sticks) {
       const a = nodeById(stick.a);
       const b = nodeById(stick.b);
       if (!a || !b) continue;
-      stick.length = Number(distance(a.position, b.position).toFixed(3));
-      stick.valid = isOneRodLength(a.position, b.position);
-      const mesh = stickCylinderBetween(a.position, b.position, stick.valid);
+      const mesh = cylinderBetween(a.position, b.position, stick.valid ? stickMaterial : badStickMaterial, 0.038);
       mesh.userData = { type: 'stick', id: stick.id };
-      group.add(mesh);
+      structureGroup.add(mesh);
       stickMeshes.set(stick.id, mesh);
     }
 
     for (const node of design.nodes) {
-      const mesh = new THREE.Mesh(ballGeometry, selected.includes(node.id) ? selectedBallMaterial : ballMaterial);
-      mesh.position.set(node.position.x, node.position.y, node.position.z);
-      mesh.userData = { type: 'node', id: node.id };
-      group.add(mesh);
+      const mesh = makeBallMesh(node);
+      structureGroup.add(mesh);
       meshes.set(node.id, mesh);
     }
+    buildConnectionPreviews();
     updatePanel();
   }
 
@@ -299,23 +504,25 @@ async function setupBrowserApp() {
     if (parts.ballShortage || parts.stickShortage) {
       status.classList.add('bad');
       status.textContent = `Short by ${parts.ballShortage} balls and ${parts.stickShortage} sticks.`;
-    } else if (parts.invalidSticks || parts.overloadedBalls) {
+    } else if (parts.invalidSticks || parts.overloadedBalls || parts.duplicateSockets) {
       status.classList.add('warn');
-      status.textContent = `${parts.invalidSticks} off-length sticks; ${parts.overloadedBalls} balls over ${MAX_SOCKET_DEGREE} sockets.`;
+      status.textContent = `${parts.invalidSticks} off-length/off-angle sticks; ${parts.duplicateSockets} duplicate sockets.`;
     } else {
       status.classList.add('good');
-      status.textContent = 'Within entered inventory.';
+      status.textContent = 'Within entered inventory and 18-hole socket rules.';
     }
     document.querySelector('#parts-list').value = [
       `Balls/connectors: ${parts.balls}`,
       `Sticks/rods: ${parts.sticks}`,
-      `Off-length sticks: ${parts.invalidSticks}`,
-      `Open connector sockets estimate: ${parts.openEnds}`,
+      `Open socket holes: ${parts.openEnds}`,
+      `Off-length/off-angle sticks: ${parts.invalidSticks}`,
+      `Duplicate socket usage: ${parts.duplicateSockets}`,
       `Owned inventory: ${inventory.balls} balls, ${inventory.sticks} sticks`,
       '',
-      'Tip: keep strict mode on for same-length rod kits. Red sticks mean the distance is not one rod length.'
+      '18-hole model: 12 horizontal sockets every 30° + 6 vertical/roof sockets.',
+      'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.'
     ].join('\n');
-    document.querySelector('#selection-label').textContent = selected.length ? `Selected ball${selected.length > 1 ? 's' : ''}: ${selected.join(', ')}` : 'No selection';
+    document.querySelector('#selection-label').textContent = selected.length ? `Selected ${selected.length}: ${selected.join(', ')}` : 'No selection';
   }
 
   function pointerToNdc(event) {
@@ -333,24 +540,52 @@ async function setupBrowserApp() {
     return { x: roundToGrid(hit.point.x), y, z: roundToGrid(hit.point.z) };
   }
 
+  function findInteractive(object) {
+    let current = object;
+    while (current) {
+      if (current.userData?.type) return current;
+      current = current.parent;
+    }
+    return object;
+  }
+
   function getHitObject(event) {
     pointerToNdc(event);
     raycaster.setFromCamera(pointer, camera);
-    return raycaster.intersectObjects([...meshes.values(), ...stickMeshes.values()], false)[0]?.object || null;
+    const objects = [...meshes.values(), ...stickMeshes.values(), ...previewMeshes];
+    return findInteractive(raycaster.intersectObjects(objects, true)[0]?.object || null);
   }
 
-  function selectNode(id) {
-    if (mode === 'connect') {
-      if (!selected.includes(id)) selected.push(id);
-      if (selected.length === 2) {
-        const strict = document.querySelector('#strict-rods').checked;
-        const result = addStick(design, selected[0], selected[1], { strict });
-        setMessage(result.ok ? 'Stick added.' : result.reason);
-        selected = [];
-      }
+  function toggleSelection(id) {
+    selected = selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id];
+  }
+
+  function selectNode(id, event = {}) {
+    if (event.shiftKey || mode === 'select') {
+      toggleSelection(id);
+    } else if (mode === 'connect') {
+      selected = [id];
+      setMessage(`Ball ${id} selected. Click a semitransparent preview rod/end to add a connection.`);
+    } else if (mode === 'move') {
+      if (!selected.includes(id)) selected = [id];
+      else if (event.shiftKey) toggleSelection(id);
+      setMessage(selected.length > 1 ? 'Click the grid to move the whole selection using the first selected ball as anchor.' : 'Click the grid to move this ball. Shift-click more balls for multi-move.');
     } else {
       selected = [id];
     }
+    refreshScene();
+  }
+
+  function connectPreview(payload) {
+    if (!payload.enabled) {
+      setMessage('That preview uses a socket that is already occupied.');
+      return;
+    }
+    const target = payload.targetId ? nodeById(payload.targetId) : addNode(design, payload.targetPosition);
+    const strict = true;
+    const result = addStick(design, payload.fromId, target.id, { strict });
+    setMessage(result.ok ? `Stick added via ${payload.socketId}.` : result.reason);
+    selected = [target.id];
     refreshScene();
   }
 
@@ -361,15 +596,19 @@ async function setupBrowserApp() {
 
   canvas.addEventListener('pointerdown', (event) => {
     const hit = getHitObject(event);
+    if (hit?.userData.type === 'preview') {
+      connectPreview(hit.userData);
+      return;
+    }
     if (hit?.userData.type === 'node') {
       const id = hit.userData.id;
       if (mode === 'delete') {
         removeNode(design, id);
-        selected = [];
+        selected = selected.filter((item) => item !== id);
         setMessage('Ball and attached sticks deleted.');
         refreshScene();
       } else {
-        selectNode(id);
+        selectNode(id, event);
       }
       return;
     }
@@ -386,21 +625,27 @@ async function setupBrowserApp() {
       selected = [node.id];
       setMessage(`Ball ${node.id} placed at ${point.x}, ${point.y}, ${point.z}.`);
       refreshScene();
-    } else if (mode === 'move' && selected.length === 1) {
-      const moved = moveNode(design, selected[0], point);
-      setMessage(moved?.id === selected[0] ? 'Ball moved; connected stick lengths recalculated.' : 'That spot already has a ball.');
+    } else if (mode === 'move' && selected.length) {
+      const anchor = nodeById(selected[0]);
+      const delta = { x: point.x - anchor.position.x, y: point.y - anchor.position.y, z: point.z - anchor.position.z };
+      const result = moveNodesByDelta(design, selected, delta);
+      setMessage(result.ok ? `Moved ${result.moved} selected ball${result.moved === 1 ? '' : 's'}.` : result.reason);
+      refreshScene();
+    } else if (mode === 'select' && !event.shiftKey) {
+      selected = [];
       refreshScene();
     }
   });
 
   function setMode(nextMode) {
     mode = nextMode;
-    selected = [];
+    if (mode === 'add' || mode === 'delete') selected = [];
     document.querySelectorAll('.tool').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
     const help = {
+      select: 'Select mode: click balls to multi-select. Shift-click also toggles selection in other modes.',
       add: 'Add mode: click the grid to place connector balls. Use height for upper levels.',
-      connect: 'Connect mode: click two balls. Strict mode only accepts one-rod distances.',
-      move: 'Move mode: select a ball, then click a new grid position at the chosen height.',
+      connect: 'Connect mode: click a ball, then click a semitransparent preview rod/end. Yellow endpoint creates a new ball.',
+      move: 'Move mode: select one or more balls, then click the grid to move them together.',
       delete: 'Delete mode: click a ball or stick to remove it.'
     };
     document.querySelector('#mode-help').textContent = help[mode];
@@ -411,7 +656,13 @@ async function setupBrowserApp() {
   document.querySelector('#height').addEventListener('input', (event) => {
     document.querySelector('#height-label').textContent = event.target.value;
   });
-  document.querySelectorAll('#owned-balls, #owned-sticks, #strict-rods').forEach((input) => input.addEventListener('input', updatePanel));
+  document.querySelectorAll('#owned-balls, #owned-sticks, #strict-rods').forEach((input) => input.addEventListener('input', () => refreshScene()));
+  document.querySelector('#connect-selected').addEventListener('click', () => {
+    const strict = true;
+    const result = connectSelectedPairs(design, selected, { strict });
+    setMessage(result.added ? `Connected ${result.added} valid selected pair${result.added === 1 ? '' : 's'}.` : `No valid selected pairs. ${result.messages[0] || ''}`);
+    refreshScene();
+  });
 
   function findOpenOrigin() {
     if (!design.nodes.length) return { x: 0, y: 0, z: 0 };
@@ -425,15 +676,20 @@ async function setupBrowserApp() {
       design = createEmptyDesign();
       selected = [];
       setMessage('Design cleared.');
+    } else if (action === 'triangle') {
+      selected = addEquilateralTriangle(design, findOpenOrigin()).map((node) => node.id);
+      setMessage('Equilateral triangle added using 60° horizontal sockets.');
     } else if (action === 'cube') {
-      addCubeBay(design, findOpenOrigin());
-      setMessage('Cube bay added: 8 balls, up to 12 sticks if not sharing parts.');
+      selected = addCubeBay(design, findOpenOrigin()).map((node) => node.id);
+      setMessage('Cube bay added.');
     } else if (action === 'tunnel') {
       addTunnel(design, findOpenOrigin(), 3);
+      selected = [];
       setMessage('Three-bay tunnel added with shared balls/sticks between bays.');
     } else if (action === 'roof') {
       addPitchedRoofBay(design, { ...findOpenOrigin(), y: 1 });
-      setMessage('Pitched roof bay added using one-rod sloped sides.');
+      selected = [];
+      setMessage('Pitched roof bay added using 60° roof sockets.');
     }
     refreshScene();
   }));
