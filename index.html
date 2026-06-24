@@ -3,128 +3,98 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Generate printable kids' fort-building prompt cards for indoor STEM and imaginative play." />
-    <title>Fort Card Generator</title>
+    <meta name="description" content="A realtime 3D ball-and-stick fort planner for estimating connector balls and rods before building." />
+    <title>3D Fort Kit Planner</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="hero">
-      <div class="hero__copy">
-        <p class="eyebrow">Printable play prompts</p>
-        <h1>Fort Card Generator</h1>
-        <p>
-          Make kid-friendly fort-building missions with story prompts, STEM twists,
-          safety notes, and material lists. Works fully offline in the browser.
-        </p>
-        <p class="note">
-          Independent fan-made style tool. Not affiliated with or endorsed by any toy brand.
-        </p>
-      </div>
-      <div class="hero__badge" aria-hidden="true">
-        <span>🏰</span>
-        <strong>Build</strong>
-        <em>Imagine • Test • Improve</em>
-      </div>
-    </header>
-
-    <main>
-      <section class="panel controls" aria-labelledby="controls-title">
-        <div>
-          <p class="eyebrow">Generator settings</p>
-          <h2 id="controls-title">Create a new fort challenge</h2>
-        </div>
-
-        <form id="generator-form">
-          <label>
-            Age range
-            <select id="age">
-              <option value="preschool">3–5: simple + sensory</option>
-              <option value="early" selected>6–8: creative + guided</option>
-              <option value="older">9–12: bigger engineering challenge</option>
-            </select>
-          </label>
-
-          <label>
-            Play space
-            <select id="space">
-              <option value="indoor" selected>Indoor</option>
-              <option value="outdoor">Outdoor</option>
-              <option value="tiny">Tiny room / apartment</option>
-            </select>
-          </label>
-
-          <label>
-            Energy level
-            <select id="energy">
-              <option value="calm">Calm</option>
-              <option value="balanced" selected>Balanced</option>
-              <option value="active">Active</option>
-            </select>
-          </label>
-
-          <fieldset>
-            <legend>Available materials</legend>
-            <div class="checks" id="materials">
-              <label><input type="checkbox" value="blankets" checked /> Blankets</label>
-              <label><input type="checkbox" value="pillows" checked /> Pillows</label>
-              <label><input type="checkbox" value="chairs" checked /> Chairs</label>
-              <label><input type="checkbox" value="cardboard" /> Cardboard boxes</label>
-              <label><input type="checkbox" value="clothespins" checked /> Clothespins / clips</label>
-              <label><input type="checkbox" value="lights" /> String lights / torch</label>
-              <label><input type="checkbox" value="books" /> Books</label>
-              <label><input type="checkbox" value="cushions" checked /> Sofa cushions</label>
-            </div>
-          </fieldset>
-
-          <label>
-            Theme
-            <select id="theme">
-              <option value="surprise" selected>Surprise me</option>
-              <option value="castle">Castle</option>
-              <option value="space">Space station</option>
-              <option value="jungle">Jungle base</option>
-              <option value="ocean">Ocean cave</option>
-              <option value="dino">Dinosaur dig</option>
-              <option value="reading">Cozy reading den</option>
-            </select>
-          </label>
-
-          <label>
-            Number of cards
-            <input id="count" type="number" min="1" max="12" value="4" />
-          </label>
-
-          <label>
-            Seed <span class="muted">optional, for repeatable cards</span>
-            <input id="seed" type="text" placeholder="e.g. rainy-sunday" />
-          </label>
-
-          <div class="buttons">
-            <button type="submit">Generate cards</button>
-            <button type="button" class="secondary" id="randomize">Randomize seed</button>
-            <button type="button" class="secondary" id="print">Print / Save PDF</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel output" aria-labelledby="cards-title">
-        <div class="output__top">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Planner controls">
+        <div class="brand">
+          <span class="brand__mark">⚪</span>
           <div>
-            <p class="eyebrow">Your printable cards</p>
-            <h2 id="cards-title">Fort missions</h2>
+            <p class="eyebrow">Tiny Thinkers-style planner</p>
+            <h1>3D Fort Kit Planner</h1>
           </div>
-          <button type="button" class="secondary" id="copy-link">Copy share link</button>
         </div>
-        <div id="cards" class="cards" aria-live="polite"></div>
-      </section>
-    </main>
 
-    <footer>
-      <p>
-        Safety first: grown-ups should approve supports, avoid heavy objects overhead,
-        keep air gaps, and supervise lights or climbing.
-      </p>
-    </footer>
+        <p class="small muted">
+          Plan with connector balls and equal-length rods, then check the bill of materials before building in real life.
+          This is an independent compatibility-style planner, not an official toy-brand app.
+        </p>
+
+        <section class="panel stats" aria-labelledby="stats-title">
+          <h2 id="stats-title">Parts needed</h2>
+          <div class="stats-grid">
+            <div><strong id="balls-used">0</strong><span>balls</span></div>
+            <div><strong id="sticks-used">0</strong><span>sticks</span></div>
+            <div><strong id="open-ends">0</strong><span>open ends</span></div>
+            <div><strong id="invalid-sticks">0</strong><span>off-length</span></div>
+          </div>
+          <div class="inventory">
+            <label>Owned balls <input id="owned-balls" type="number" min="0" value="36" /></label>
+            <label>Owned sticks <input id="owned-sticks" type="number" min="0" value="64" /></label>
+          </div>
+          <p id="inventory-status" class="status good">Within entered inventory.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="build-title">
+          <h2 id="build-title">Build tools</h2>
+          <div class="tools" role="group" aria-label="Modes">
+            <button class="tool active" data-mode="add">Add ball</button>
+            <button class="tool" data-mode="connect">Connect</button>
+            <button class="tool" data-mode="move">Move</button>
+            <button class="tool danger" data-mode="delete">Delete</button>
+          </div>
+
+          <label class="range-label">
+            Build height level <strong id="height-label">0</strong>
+            <input id="height" type="range" min="0" max="5" step="0.5" value="0" />
+          </label>
+
+          <label class="checkbox-line">
+            <input id="strict-rods" type="checkbox" checked />
+            Require one-stick length connections
+          </label>
+
+          <p class="help" id="mode-help">
+            Add mode: click the grid to place connector balls. Use height for upper levels.
+          </p>
+        </section>
+
+        <section class="panel" aria-labelledby="templates-title">
+          <h2 id="templates-title">Quick structures</h2>
+          <div class="template-grid">
+            <button data-template="cube">Add cube bay</button>
+            <button data-template="tunnel">Add 3-bay tunnel</button>
+            <button data-template="roof">Add pitched roof bay</button>
+            <button data-template="reset">Clear all</button>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="save-title">
+          <h2 id="save-title">Save / share</h2>
+          <div class="template-grid">
+            <button id="copy-link">Copy design link</button>
+            <button id="download-json">Download JSON</button>
+            <button id="load-json">Load JSON</button>
+            <input id="file-input" type="file" accept="application/json" hidden />
+          </div>
+          <textarea id="parts-list" readonly aria-label="Parts list"></textarea>
+        </section>
+      </aside>
+
+      <main class="viewport">
+        <div class="topbar">
+          <div>
+            <strong id="selection-label">No selection</strong>
+            <span id="message">Orbit: drag background • Zoom: wheel • Pan: right drag</span>
+          </div>
+          <button id="fit-view">Fit view</button>
+        </div>
+        <canvas id="scene" aria-label="3D fort kit planner"></canvas>
+      </main>
+    </div>
 
     <script type="module" src="app.js"></script>
   </body>

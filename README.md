@@ -1,17 +1,23 @@
-# Fort Card Generator
+# 3D Fort Kit Planner
 
-A tiny static web app for generating printable kids' fort-building prompt cards: missions, materials, story sparks, STEM tests, safety notes, and age/space/energy tweaks.
+A realtime Three.js web app for planning ball-and-stick kids' fort builds before constructing them physically.
 
-I searched for an existing online generator for the phrase "Tiny Thinkers Fort" and did not find a clear dedicated generator. This project is an independent, brand-neutral alternative and is not affiliated with any toy brand.
+The app is designed around the common commercial fort-kit pattern used by Tiny Thinkers-style toys: spherical connector balls plus equal-length rods/sticks. I could not verify a public official dimensional spec from search results, so the planner keeps the important practical constraint configurable: **one connector ball per joint and one equal-length stick per valid connection**. You can enter the number of balls/sticks in your own box and the app shows whether the design fits.
 
 ## Features
 
-- Fully static: plain HTML, CSS, and JavaScript
-- Works offline after loading
-- Repeatable generation with an optional seed
-- Shareable URLs containing the selected settings
-- Print-friendly card layout for Save as PDF
-- GitHub Pages workflow included
+- Realtime Three.js 3D scene with orbit camera
+- Add, connect, move, and delete connector balls/sticks
+- Strict one-stick-length mode for equal-length rod kits
+- Live bill of materials:
+  - balls/connectors needed
+  - sticks/rods needed
+  - off-length connections
+  - inventory shortage vs owned parts
+- Quick templates: cube bay, tunnel, pitched roof bay
+- Share design as URL
+- Download/load design JSON
+- Static GitHub Pages deployment workflow
 
 ## Local preview
 
@@ -21,12 +27,13 @@ python3 -m http.server 8080
 
 Then open <http://localhost:8080>.
 
+## Test
+
+```bash
+npm test
+npm run check
+```
+
 ## Deploy to GitHub Pages
 
-This repository includes `.github/workflows/pages.yml`.
-
-1. Push to `main`.
-2. In GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-3. The included workflow publishes the static files.
-
-If the repository is private, GitHub Pages availability depends on the account/plan. Public repositories work with GitHub Pages by default.
+This repository includes `.github/workflows/pages.yml`. Push to `main`; GitHub Pages deploys from the workflow.
