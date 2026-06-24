@@ -182,8 +182,8 @@ function decodeFromUrl(value) {
 }
 
 async function setupBrowserApp() {
-  const THREE = await import('https://unpkg.com/three@0.160.0/build/three.module.js');
-  const { OrbitControls } = await import('https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js');
+  const THREE = await import('three');
+  const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
 
   let design = createEmptyDesign();
   let mode = 'add';
@@ -495,4 +495,10 @@ async function setupBrowserApp() {
   });
 }
 
-if (typeof document !== 'undefined') setupBrowserApp();
+if (typeof document !== 'undefined') {
+  setupBrowserApp().catch((error) => {
+    console.error(error);
+    const message = document.querySelector('#message');
+    if (message) message.textContent = `3D engine failed to load: ${error.message}`;
+  });
+}

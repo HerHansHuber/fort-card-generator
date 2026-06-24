@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   addCubeBay,
   addNode,
@@ -58,4 +59,14 @@ test('designs serialize and restore ids', () => {
   assert.deepEqual(calculateParts(restored), calculateParts(design));
   assert.equal(restored.nextNodeId, 9);
   assert.equal(restored.nextStickId, 13);
+});
+
+test('browser import map provides Three.js bare module imports', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(html, /<script type="importmap">/);
+  assert.match(html, /"three": "https:\/\/unpkg\.com\/three@0\.160\.0\/build\/three\.module\.js"/);
+  assert.match(html, /"three\/addons\/": "https:\/\/unpkg\.com\/three@0\.160\.0\/examples\/jsm\/"/);
+  assert.match(app, /import\('three'\)/);
+  assert.match(app, /import\('three\/addons\/controls\/OrbitControls\.js'\)/);
 });
