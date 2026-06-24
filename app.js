@@ -1,4 +1,4 @@
-export const ROD_LENGTH = 1;
+export let ROD_LENGTH = 1;
 export const ROD_TOLERANCE = 0.08;
 export const SOCKET_ANGLE_TOLERANCE_DEG = 8;
 export const MAX_SOCKET_DEGREE = 18;
@@ -37,7 +37,17 @@ export const SOCKET_DIRECTIONS = [...AXIS_SOCKET_DEFS, ...FACE_DIAGONAL_SOCKET_D
 }));
 
 export function createEmptyDesign() {
-  return { nodes: [], sticks: [], nextNodeId: 1, nextStickId: 1 };
+  return { nodes: [], sticks: [], nextNodeId: 1, nextStickId: 1, rodLength: ROD_LENGTH };
+}
+
+export function setRodLength(length) {
+  const next = Number(length);
+  ROD_LENGTH = Number.isFinite(next) ? Math.max(0.1, next) : 1;
+  return ROD_LENGTH;
+}
+
+export function rodTolerance() {
+  return Math.max(0.02, ROD_LENGTH * ROD_TOLERANCE);
 }
 
 export function roundToGrid(value, step = 0.5) {
@@ -45,7 +55,7 @@ export function roundToGrid(value, step = 0.5) {
 }
 
 function roundCoord(value) {
-  return Math.round(Number(value) * 1000) / 1000;
+  return Math.round(Number(value) * 1000000) / 1000000;
 }
 
 function normalizePosition(position) {
@@ -87,7 +97,7 @@ export function nearestSocketDirection(vector) {
   return { ...best, angle: bestAngle };
 }
 
-export function isOneRodLength(a, b, tolerance = ROD_TOLERANCE) {
+export function isOneRodLength(a, b, tolerance = rodTolerance()) {
   return Math.abs(distance(a, b) - ROD_LENGTH) <= tolerance;
 }
 
@@ -97,7 +107,7 @@ export function connectionAnalysis(a, b) {
   const backward = nearestSocketDirection(vectorBetween(b, a));
   return {
     length,
-    lengthOk: Math.abs(length - ROD_LENGTH) <= ROD_TOLERANCE,
+    lengthOk: Math.abs(length - ROD_LENGTH) <= rodTolerance(),
     socketOk: forward.angle <= SOCKET_ANGLE_TOLERANCE_DEG && backward.angle <= SOCKET_ANGLE_TOLERANCE_DEG,
     fromSocket: forward,
     toSocket: backward
@@ -142,6 +152,24 @@ export function moveNodesByDelta(design, nodeIds, delta) {
   return { ok: true, moved: moving.length };
 }
 
+export function scaleDesignToRodLength(design, newLength, oldLength = ROD_LENGTH) {
+  const previous = Number(oldLength) || ROD_LENGTH || 1;
+  const next = setRodLength(newLength);
+  const factor = next / previous;
+  if (Math.abs(factor - 1) > 1e-9) {
+    for (const node of design.nodes) {
+      node.position = normalizePosition({
+        x: node.position.x * factor,
+        y: node.position.y * factor,
+        z: node.position.z * factor
+      });
+    }
+  }
+  design.rodLength = next;
+  calculateParts(design);
+  return { factor, rodLength: next };
+}
+
 export function removeNode(design, nodeId) {
   design.nodes = design.nodes.filter((node) => node.id !== nodeId);
   design.sticks = design.sticks.filter((stick) => stick.a !== nodeId && stick.b !== nodeId);
@@ -181,7 +209,7 @@ export function addStick(design, a, b, { strict = true } = {}) {
   if (exists) return { ok: false, reason: 'These balls are already connected.' };
   const analysis = connectionAnalysis(nodeA.position, nodeB.position);
   if (strict && !analysis.lengthOk) {
-    return { ok: false, reason: `Off-length: ${analysis.length.toFixed(2)} rods. Toy sticks are all one length, so square diagonals cannot be connected.` };
+    return { ok: false, reason: `Off-length: ${analysis.length.toFixed(2)} vs stick length ${ROD_LENGTH.toFixed(2)}. Toy sticks are all one length, so square diagonals cannot be connected.` };
   }
   if (strict && !analysis.socketOk) {
     return { ok: false, reason: `Off-angle: nearest 18-hole sockets miss by ${Math.min(analysis.fromSocket.angle, analysis.toSocket.angle).toFixed(1)}°.` };
@@ -255,11 +283,12 @@ export function calculateParts(design, inventory = {}) {
 }
 
 export function serializeDesign(design) {
-  return JSON.stringify({ version: 2, nodes: design.nodes, sticks: design.sticks }, null, 2);
+  return JSON.stringify({ version: 3, rodLength: ROD_LENGTH, nodes: design.nodes, sticks: design.sticks }, null, 2);
 }
 
 export function deserializeDesign(json) {
   const parsed = typeof json === 'string' ? JSON.parse(json) : json;
+  setRodLength(parsed.rodLength ?? 1);
   const design = createEmptyDesign();
   design.nodes = (parsed.nodes || []).map((node) => ({ id: Number(node.id), position: normalizePosition(node.position) }));
   design.sticks = (parsed.sticks || []).map((stick) => ({
@@ -283,7 +312,7 @@ function addEdge(design, a, b) {
 
 export function addEquilateralTriangle(design, origin = { x: 0, y: 0, z: 0 }) {
   const o = origin;
-  const s = 1 / Math.sqrt(2);
+  const s = ROD_LENGTH / Math.sqrt(2);
   // Uses three allowed 18-hole directions:
   // A→B = XY diagonal, A→C = XZ diagonal, B→C = YZ diagonal.
   // All three rods are exactly the same length.
@@ -298,11 +327,12 @@ export function addEquilateralTriangle(design, origin = { x: 0, y: 0, z: 0 }) {
 
 export function addCubeBay(design, origin = { x: 0, y: 0, z: 0 }) {
   const o = origin;
+  const r = ROD_LENGTH;
   const n = [];
-  for (const x of [0, 1]) for (const y of [0, 1]) for (const z of [0, 1]) {
+  for (const x of [0, r]) for (const y of [0, r]) for (const z of [0, r]) {
     n.push(addNode(design, { x: o.x + x, y: o.y + y, z: o.z + z }));
   }
-  const at = (x, y, z) => design.nodes.find((node) => keyForPosition(node.position) === keyForPosition({ x: o.x + x, y: o.y + y, z: o.z + z }));
+  const at = (x, y, z) => design.nodes.find((node) => keyForPosition(node.position) === keyForPosition({ x: o.x + x * r, y: o.y + y * r, z: o.z + z * r }));
   for (const y of [0, 1]) {
     addEdge(design, at(0, y, 0), at(1, y, 0));
     addEdge(design, at(0, y, 1), at(1, y, 1));
@@ -314,13 +344,13 @@ export function addCubeBay(design, origin = { x: 0, y: 0, z: 0 }) {
 }
 
 export function addTunnel(design, origin = { x: 0, y: 0, z: 0 }, bays = 3) {
-  for (let i = 0; i < bays; i += 1) addCubeBay(design, { x: origin.x + i, y: origin.y, z: origin.z });
+  for (let i = 0; i < bays; i += 1) addCubeBay(design, { x: origin.x + i * ROD_LENGTH, y: origin.y, z: origin.z });
 }
 
 export function addPitchedRoofBay(design, origin = { x: 0, y: 1, z: 0 }) {
   const o = origin;
-  const s = 1 / Math.sqrt(2);
-  const width = Math.sqrt(2);
+  const s = ROD_LENGTH / Math.sqrt(2);
+  const width = ROD_LENGTH * Math.sqrt(2);
   const left = addNode(design, { x: o.x, y: o.y, z: o.z });
   const right = addNode(design, { x: o.x + width, y: o.y, z: o.z });
   const peak = addNode(design, { x: o.x + s, y: o.y + s, z: o.z });
@@ -540,6 +570,9 @@ async function setupBrowserApp() {
     document.querySelector('#sticks-used').textContent = parts.sticks;
     document.querySelector('#open-ends').textContent = parts.openEnds;
     document.querySelector('#invalid-sticks').textContent = parts.invalidSticks;
+    document.querySelector('#stick-length-label').textContent = ROD_LENGTH.toFixed(2);
+    const stickLengthInput = document.querySelector('#stick-length');
+    if (stickLengthInput && Math.abs(Number(stickLengthInput.value) - ROD_LENGTH) > 0.001) stickLengthInput.value = ROD_LENGTH.toFixed(2);
     const status = document.querySelector('#inventory-status');
     status.className = 'status';
     if (parts.ballShortage || parts.stickShortage) {
@@ -559,6 +592,7 @@ async function setupBrowserApp() {
       `Off-length/off-angle sticks: ${parts.invalidSticks}`,
       `Duplicate socket usage: ${parts.duplicateSockets}`,
       `Owned inventory: ${inventory.balls} balls, ${inventory.sticks} sticks`,
+      `Current stick length: ${ROD_LENGTH.toFixed(2)} planner units`,
       '',
       '18-hole model: 6 straight sockets + 12 face-diagonal sockets on a rhombicuboctahedron-like connector.',
       'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.'
@@ -577,8 +611,9 @@ async function setupBrowserApp() {
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObject(floor)[0];
     if (!hit) return null;
-    const y = Number(document.querySelector('#height').value);
-    return { x: roundToGrid(hit.point.x), y, z: roundToGrid(hit.point.z) };
+    const y = Number(document.querySelector('#height').value) * ROD_LENGTH;
+    const snap = Math.max(0.05, ROD_LENGTH / 2);
+    return { x: roundToGrid(hit.point.x, snap), y, z: roundToGrid(hit.point.z, snap) };
   }
 
   function findInteractive(object) {
@@ -697,6 +732,14 @@ async function setupBrowserApp() {
   document.querySelector('#height').addEventListener('input', (event) => {
     document.querySelector('#height-label').textContent = event.target.value;
   });
+  document.querySelector('#stick-length').addEventListener('input', (event) => {
+    const previous = ROD_LENGTH;
+    const next = Number(event.target.value);
+    const result = scaleDesignToRodLength(design, next, previous);
+    document.querySelector('#stick-length-label').textContent = result.rodLength.toFixed(2);
+    setMessage(`Stick length changed to ${result.rodLength.toFixed(2)}. Existing balls/sticks were rescaled by ${result.factor.toFixed(2)}×.`);
+    refreshScene();
+  });
   document.querySelectorAll('#owned-balls, #owned-sticks, #strict-rods').forEach((input) => input.addEventListener('input', () => refreshScene()));
   document.querySelector('#connect-selected').addEventListener('click', () => {
     const strict = true;
@@ -708,7 +751,7 @@ async function setupBrowserApp() {
   function findOpenOrigin() {
     if (!design.nodes.length) return { x: 0, y: 0, z: 0 };
     const maxX = Math.max(...design.nodes.map((node) => node.position.x));
-    return { x: Math.ceil(maxX) + 1, y: 0, z: 0 };
+    return { x: roundToGrid(maxX + ROD_LENGTH, Math.max(0.05, ROD_LENGTH / 2)), y: 0, z: 0 };
   }
 
   document.querySelectorAll('[data-template]').forEach((button) => button.addEventListener('click', () => {
@@ -719,7 +762,7 @@ async function setupBrowserApp() {
       setMessage('Design cleared.');
     } else if (action === 'triangle') {
       selected = addEquilateralTriangle(design, findOpenOrigin()).map((node) => node.id);
-      setMessage('Equilateral triangle added using 60° horizontal sockets.');
+      setMessage('Equal-stick triangle added using 45° face-diagonal sockets.');
     } else if (action === 'cube') {
       selected = addCubeBay(design, findOpenOrigin()).map((node) => node.id);
       setMessage('Cube bay added.');
@@ -728,9 +771,9 @@ async function setupBrowserApp() {
       selected = [];
       setMessage('Three-bay tunnel added with shared balls/sticks between bays.');
     } else if (action === 'roof') {
-      addPitchedRoofBay(design, { ...findOpenOrigin(), y: 1 });
+      addPitchedRoofBay(design, { ...findOpenOrigin(), y: ROD_LENGTH });
       selected = [];
-      setMessage('Pitched roof bay added using 60° roof sockets.');
+      setMessage('Pitched roof bay added using equal-length face-diagonal sockets.');
     }
     refreshScene();
   }));

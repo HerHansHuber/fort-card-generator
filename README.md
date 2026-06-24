@@ -12,7 +12,7 @@ Connector visuals are informed by Shane7986's Thingiverse model [Coupling Ball f
 - Add, connect, move, and delete connector balls/sticks
 - Multi-select balls, connect all valid selected pairs, and move selections together
 - WYSIWYG connection mode with semitransparent preview rods/endpoints
-- Fixed one-stick-length rods: no impossible square diagonals
+- Stick-length slider that rescales every existing ball/stick plus all future previews/templates
 - 18-hole connector model with faceted blue ball and visible socket holes
 - Live bill of materials:
   - balls/connectors needed

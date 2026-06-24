@@ -15,8 +15,14 @@ import {
   distance,
   getSocketUsage,
   moveNodesByDelta,
-  serializeDesign
+  scaleDesignToRodLength,
+  serializeDesign,
+  setRodLength
 } from '../app.js';
+
+test.beforeEach(() => {
+  setRodLength(1);
+});
 
 test('18-hole socket model exposes 6 axis and 12 face-diagonal directions', () => {
   assert.equal(SOCKET_DIRECTIONS.length, 18);
@@ -34,6 +40,19 @@ test('cube bay uses 8 balls and 12 valid one-length sticks', () => {
   assert.equal(parts.invalidSticks, 0);
   assert.equal(parts.duplicateSockets, 0);
   assert.equal(parts.withinInventory, true);
+});
+
+test('stick length slider logic rescales existing balls and sticks', () => {
+  const design = createEmptyDesign();
+  addCubeBay(design);
+  const before = distance(design.nodes[0].position, design.nodes[1].position);
+  const result = scaleDesignToRodLength(design, 1.5, 1);
+  const after = distance(design.nodes[0].position, design.nodes[1].position);
+  assert.equal(result.rodLength, 1.5);
+  assert.ok(Math.abs(before - 1) < 0.001);
+  assert.ok(Math.abs(after - 1.5) < 0.001);
+  assert.equal(calculateParts(design).invalidSticks, 0);
+  assert.match(serializeDesign(design), /"rodLength": 1\.5/);
 });
 
 test('equilateral triangle uses three 45-degree face-diagonal sockets', () => {
@@ -146,7 +165,10 @@ test('browser import map and controls exist', () => {
   assert.match(html, /data-mode="select"/);
   assert.match(html, /id="connect-selected"/);
   assert.match(html, /data-template="triangle"/);
-  assert.match(html, /app\.js\?v=rhombicuboctahedron-18-sockets/);
+  assert.match(html, /id="stick-length"/);
+  assert.match(html, /Changing this rescales every existing ball and stick/);
+  assert.match(html, /app\.js\?v=stick-length-slider/);
+  assert.match(app, /scaleDesignToRodLength/);
   assert.match(app, /ConvexGeometry/);
   assert.match(app, /createConnectorGeometry/);
   assert.match(app, /face-diagonal sockets/);

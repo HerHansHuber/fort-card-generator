@@ -228,6 +228,11 @@ input[type="range"] {
   line-height: 1.42;
 }
 
+.help.compact {
+  margin-top: 4px;
+  font-size: 0.78rem;
+}
+
 #parts-list {
   min-height: 150px;
   resize: vertical;
