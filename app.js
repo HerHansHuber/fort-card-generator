@@ -383,12 +383,13 @@ async function setupBrowserApp() {
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const ballGeometry = new THREE.SphereGeometry(0.16, 32, 20);
-  const socketGeometry = new THREE.SphereGeometry(0.025, 10, 8);
-  const ballMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.34, metalness: 0.02 });
-  const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x5a3b00, roughness: 0.32 });
-  const socketMaterial = new THREE.MeshStandardMaterial({ color: 0x132033, roughness: 0.6 });
-  const usedSocketMaterial = new THREE.MeshStandardMaterial({ color: 0x52d1ff, emissive: 0x0b3545, roughness: 0.4 });
+  const ballGeometry = new THREE.DodecahedronGeometry(0.19, 0);
+  const socketHoleGeometry = new THREE.CylinderGeometry(0.046, 0.038, 0.06, 24, 1, true);
+  const socketRimGeometry = new THREE.TorusGeometry(0.047, 0.007, 8, 24);
+  const ballMaterial = new THREE.MeshStandardMaterial({ color: 0x126bd1, roughness: 0.62, metalness: 0.01, flatShading: true });
+  const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x5a3b00, roughness: 0.48, flatShading: true });
+  const socketMaterial = new THREE.MeshStandardMaterial({ color: 0x06111f, roughness: 0.82 });
+  const usedSocketMaterial = new THREE.MeshStandardMaterial({ color: 0x073b55, emissive: 0x0f6d91, roughness: 0.55 });
   const stickMaterial = new THREE.MeshStandardMaterial({ color: 0x52d1ff, roughness: 0.42 });
   const badStickMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.42 });
   const previewStickMaterial = new THREE.MeshStandardMaterial({ color: 0x5dd39e, roughness: 0.35, transparent: true, opacity: 0.42 });
@@ -420,10 +421,21 @@ async function setupBrowserApp() {
     root.add(shell);
     const usedSockets = new Set(getSocketUsage(design, node.id).map((usage) => usage.socketId));
     for (const socket of SOCKET_DIRECTIONS) {
-      const marker = new THREE.Mesh(socketGeometry, usedSockets.has(socket.id) ? usedSocketMaterial : socketMaterial);
-      marker.position.set(socket.vector.x * 0.165, socket.vector.y * 0.165, socket.vector.z * 0.165);
-      marker.userData = { type: 'node', id: node.id, socketId: socket.id };
-      root.add(marker);
+      const socketGroup = new THREE.Group();
+      socketGroup.position.set(socket.vector.x * 0.17, socket.vector.y * 0.17, socket.vector.z * 0.17);
+      socketGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(socket.vector.x, socket.vector.y, socket.vector.z).normalize());
+      socketGroup.userData = { type: 'node', id: node.id, socketId: socket.id };
+
+      const hole = new THREE.Mesh(socketHoleGeometry, usedSockets.has(socket.id) ? usedSocketMaterial : socketMaterial);
+      hole.userData = { type: 'node', id: node.id, socketId: socket.id };
+      socketGroup.add(hole);
+
+      const rim = new THREE.Mesh(socketRimGeometry, usedSockets.has(socket.id) ? usedSocketMaterial : socketMaterial);
+      rim.rotation.x = Math.PI / 2;
+      rim.position.y = 0.032;
+      rim.userData = { type: 'node', id: node.id, socketId: socket.id };
+      socketGroup.add(rim);
+      root.add(socketGroup);
     }
     return root;
   }
