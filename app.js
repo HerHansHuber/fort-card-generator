@@ -10,28 +10,31 @@ function normalize(vector) {
   return { x: vector.x / length, y: vector.y / length, z: vector.z / length };
 }
 
-function directionFromTheta(thetaDeg) {
-  const theta = thetaDeg * DEG;
-  return normalize({ x: Math.cos(theta), y: 0, z: Math.sin(theta) });
-}
-
-// 18-hole fort connector model:
-// - 12 radial sockets around the equator at 30° increments, enabling square and triangular ground plans.
-// - 6 vertical/roof sockets: straight up/down plus two mirrored 60° roof pitch pairs.
-// This is a practical Tiny Thinkers-style constraint model for equal-length stick fort kits.
-export const SOCKET_DIRECTIONS = [
-  ...Array.from({ length: 12 }, (_, index) => ({
-    id: `H${String(index * 30).padStart(3, '0')}`,
-    label: `${index * 30}° horizontal`,
-    vector: directionFromTheta(index * 30)
-  })),
-  { id: 'UP', label: 'vertical up', vector: normalize({ x: 0, y: 1, z: 0 }) },
-  { id: 'DOWN', label: 'vertical down', vector: normalize({ x: 0, y: -1, z: 0 }) },
-  { id: 'ROOF_X_UP', label: '60° roof +X up', vector: normalize({ x: 0.5, y: Math.sqrt(3) / 2, z: 0 }) },
-  { id: 'ROOF_X_DOWN', label: '60° roof -X down', vector: normalize({ x: -0.5, y: -Math.sqrt(3) / 2, z: 0 }) },
-  { id: 'ROOF_X_NEG_UP', label: '60° roof -X up', vector: normalize({ x: -0.5, y: Math.sqrt(3) / 2, z: 0 }) },
-  { id: 'ROOF_X_NEG_DOWN', label: '60° roof +X down', vector: normalize({ x: 0.5, y: -Math.sqrt(3) / 2, z: 0 }) }
+const AXIS_SOCKET_DEFS = [
+  ['X+', '+X straight', { x: 1, y: 0, z: 0 }],
+  ['X-', '-X straight', { x: -1, y: 0, z: 0 }],
+  ['Y+', '+Y straight', { x: 0, y: 1, z: 0 }],
+  ['Y-', '-Y straight', { x: 0, y: -1, z: 0 }],
+  ['Z+', '+Z straight', { x: 0, y: 0, z: 1 }],
+  ['Z-', '-Z straight', { x: 0, y: 0, z: -1 }]
 ];
+
+const FACE_DIAGONAL_SOCKET_DEFS = [
+  ...[-1, 1].flatMap((x) => [-1, 1].map((y) => [`XY${x > 0 ? '+' : '-'}${y > 0 ? '+' : '-'}`, `45° XY ${x > 0 ? '+' : '-'}X/${y > 0 ? '+' : '-'}Y`, { x, y, z: 0 }])),
+  ...[-1, 1].flatMap((x) => [-1, 1].map((z) => [`XZ${x > 0 ? '+' : '-'}${z > 0 ? '+' : '-'}`, `45° XZ ${x > 0 ? '+' : '-'}X/${z > 0 ? '+' : '-'}Z`, { x, y: 0, z }])),
+  ...[-1, 1].flatMap((y) => [-1, 1].map((z) => [`YZ${y > 0 ? '+' : '-'}${z > 0 ? '+' : '-'}`, `45° YZ ${y > 0 ? '+' : '-'}Y/${z > 0 ? '+' : '-'}Z`, { x: 0, y, z }])),
+];
+
+// 18-hole connector model from the Thingiverse/Discovery-style coupling ball geometry.
+// The visible printed connector is a rhombicuboctahedron-like solid: 18 square faces with holes
+// and 8 small triangular facets. Normals of those 18 square faces are:
+//   6 straight axis sockets + 12 45° face-diagonal sockets.
+// This permits many angled triangles/braces while every rod remains exactly one fixed length.
+export const SOCKET_DIRECTIONS = [...AXIS_SOCKET_DEFS, ...FACE_DIAGONAL_SOCKET_DEFS].map(([id, label, vector]) => ({
+  id,
+  label,
+  vector: normalize(vector)
+}));
 
 export function createEmptyDesign() {
   return { nodes: [], sticks: [], nextNodeId: 1, nextStickId: 1 };
@@ -280,9 +283,13 @@ function addEdge(design, a, b) {
 
 export function addEquilateralTriangle(design, origin = { x: 0, y: 0, z: 0 }) {
   const o = origin;
+  const s = 1 / Math.sqrt(2);
+  // Uses three allowed 18-hole directions:
+  // A→B = XY diagonal, A→C = XZ diagonal, B→C = YZ diagonal.
+  // All three rods are exactly the same length.
   const a = addNode(design, { x: o.x, y: o.y, z: o.z });
-  const b = addNode(design, { x: o.x + 1, y: o.y, z: o.z });
-  const c = addNode(design, { x: o.x + 0.5, y: o.y, z: o.z + Math.sqrt(3) / 2 });
+  const b = addNode(design, { x: o.x + s, y: o.y + s, z: o.z });
+  const c = addNode(design, { x: o.x + s, y: o.y, z: o.z + s });
   addEdge(design, a, b);
   addEdge(design, b, c);
   addEdge(design, c, a);
@@ -312,14 +319,16 @@ export function addTunnel(design, origin = { x: 0, y: 0, z: 0 }, bays = 3) {
 
 export function addPitchedRoofBay(design, origin = { x: 0, y: 1, z: 0 }) {
   const o = origin;
-  const peakY = o.y + Math.sqrt(3) / 2;
+  const s = 1 / Math.sqrt(2);
+  const width = Math.sqrt(2);
   const left = addNode(design, { x: o.x, y: o.y, z: o.z });
-  const right = addNode(design, { x: o.x + 1, y: o.y, z: o.z });
-  const peak = addNode(design, { x: o.x + 0.5, y: peakY, z: o.z });
+  const right = addNode(design, { x: o.x + width, y: o.y, z: o.z });
+  const peak = addNode(design, { x: o.x + s, y: o.y + s, z: o.z });
   const leftBack = addNode(design, { x: o.x, y: o.y, z: o.z + 1 });
-  const rightBack = addNode(design, { x: o.x + 1, y: o.y, z: o.z + 1 });
-  const peakBack = addNode(design, { x: o.x + 0.5, y: peakY, z: o.z + 1 });
-  for (const pair of [[left, right], [left, peak], [right, peak], [leftBack, rightBack], [leftBack, peakBack], [rightBack, peakBack], [left, leftBack], [right, rightBack], [peak, peakBack]]) {
+  const rightBack = addNode(design, { x: o.x + width, y: o.y, z: o.z + 1 });
+  const peakBack = addNode(design, { x: o.x + s, y: o.y + s, z: o.z + 1 });
+  // Do not connect left↔right: that would be √2 rods and impossible with equal-length sticks.
+  for (const pair of [[left, peak], [right, peak], [leftBack, peakBack], [rightBack, peakBack], [left, leftBack], [right, rightBack], [peak, peakBack]]) {
     addEdge(design, pair[0], pair[1]);
   }
 }
@@ -335,6 +344,7 @@ function decodeFromUrl(value) {
 async function setupBrowserApp() {
   const THREE = await import('three');
   const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+  const { ConvexGeometry } = await import('three/addons/geometries/ConvexGeometry.js');
 
   let design = createEmptyDesign();
   let mode = 'add';
@@ -383,8 +393,27 @@ async function setupBrowserApp() {
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const ballGeometry = new THREE.DodecahedronGeometry(0.19, 0);
-  const socketHoleGeometry = new THREE.CylinderGeometry(0.046, 0.038, 0.06, 24, 1, true);
+  function createConnectorGeometry(radius = 0.205) {
+    const long = 1 + Math.sqrt(2);
+    const rawPoints = [];
+    const signs = [-1, 1];
+    const permutations = [
+      (a, b, c) => [a, b, c],
+      (a, b, c) => [a, c, b],
+      (a, b, c) => [c, a, b]
+    ];
+    for (const sx of signs) for (const sy of signs) for (const sz of signs) {
+      for (const permute of permutations) rawPoints.push(permute(sx, sy, sz * long));
+    }
+    const maxLength = Math.max(...rawPoints.map(([x, y, z]) => Math.hypot(x, y, z)));
+    const points = rawPoints.map(([x, y, z]) => new THREE.Vector3((x / maxLength) * radius, (y / maxLength) * radius, (z / maxLength) * radius));
+    const geometry = new ConvexGeometry(points);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  const ballGeometry = createConnectorGeometry();
+  const socketHoleGeometry = new THREE.CylinderGeometry(0.046, 0.038, 0.065, 24, 1, true);
   const socketRimGeometry = new THREE.TorusGeometry(0.047, 0.007, 8, 24);
   const ballMaterial = new THREE.MeshStandardMaterial({ color: 0x126bd1, roughness: 0.62, metalness: 0.01, flatShading: true });
   const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x5a3b00, roughness: 0.48, flatShading: true });
@@ -531,7 +560,7 @@ async function setupBrowserApp() {
       `Duplicate socket usage: ${parts.duplicateSockets}`,
       `Owned inventory: ${inventory.balls} balls, ${inventory.sticks} sticks`,
       '',
-      '18-hole model: 12 horizontal sockets every 30° + 6 vertical/roof sockets.',
+      '18-hole model: 6 straight sockets + 12 face-diagonal sockets on a rhombicuboctahedron-like connector.',
       'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.'
     ].join('\n');
     document.querySelector('#selection-label').textContent = selected.length ? `Selected ${selected.length}: ${selected.join(', ')}` : 'No selection';

@@ -2,7 +2,7 @@
 
 A realtime Three.js web app for planning ball-and-stick kids' fort builds before constructing them physically.
 
-The app is designed around the common commercial fort-kit pattern used by Tiny Thinkers-style toys: spherical/faceted connector balls with **18 possible socket angles** and **one fixed stick length**. The planner enforces that a rod can only connect two balls one stick-length apart, so square diagonals are rejected; triangles are built as equilateral triangles using the 60° socket directions.
+The app is designed around the commercial fort-kit pattern shown in the linked connector: a **rhombicuboctahedron-like** ball with **18 socket holes** on its square faces and **one fixed stick length**. The 18 allowed directions are modeled as **6 straight axis sockets plus 12 face-diagonal 45° sockets**. That creates non-obvious triangular/bracing shapes while still rejecting impossible rods such as square diagonals.
 
 Connector visuals are informed by Shane7986's Thingiverse model [Coupling Ball for Fort Building](https://www.thingiverse.com/thing:4264562), whose page describes compatibility with `.375 in` round rods/dowels and the Discovery Kids Fort Building Kit. The Thingiverse page lists the license as CC BY 4.0. This app does not embed the STL; it uses a lightweight Three.js faceted approximation with visible dark socket holes for realtime planning.
 

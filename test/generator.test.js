@@ -18,9 +18,11 @@ import {
   serializeDesign
 } from '../app.js';
 
-test('18-hole socket model exposes exactly 18 connection directions', () => {
+test('18-hole socket model exposes 6 axis and 12 face-diagonal directions', () => {
   assert.equal(SOCKET_DIRECTIONS.length, 18);
   assert.equal(new Set(SOCKET_DIRECTIONS.map((socket) => socket.id)).size, 18);
+  assert.equal(SOCKET_DIRECTIONS.filter((socket) => /^[XYZ][+-]$/.test(socket.id)).length, 6);
+  assert.equal(SOCKET_DIRECTIONS.filter((socket) => /^(XY|XZ|YZ)/.test(socket.id)).length, 12);
 });
 
 test('cube bay uses 8 balls and 12 valid one-length sticks', () => {
@@ -34,7 +36,7 @@ test('cube bay uses 8 balls and 12 valid one-length sticks', () => {
   assert.equal(parts.withinInventory, true);
 });
 
-test('equilateral triangle uses 60 degree horizontal sockets', () => {
+test('equilateral triangle uses three 45-degree face-diagonal sockets', () => {
   const design = createEmptyDesign();
   addEquilateralTriangle(design);
   const parts = calculateParts(design, { balls: 3, sticks: 3 });
@@ -90,14 +92,15 @@ test('selected balls can move together while preserving shape', () => {
   const result = moveNodesByDelta(design, [a.id, b.id, c.id], { x: 2, y: 0.5, z: -1 });
   assert.equal(result.ok, true);
   assert.equal(calculateParts(design).invalidSticks, 0);
-  assert.equal(distance(b.position, c.position), before);
+  assert.ok(Math.abs(distance(b.position, c.position) - before) < 1e-9);
 });
 
 test('connect selected pairs connects valid selected nodes', () => {
   const design = createEmptyDesign();
+  const s = 1 / Math.sqrt(2);
   const a = addNode(design, { x: 0, y: 0, z: 0 });
-  const b = addNode(design, { x: 1, y: 0, z: 0 });
-  const c = addNode(design, { x: 0.5, y: 0, z: Math.sqrt(3) / 2 });
+  const b = addNode(design, { x: s, y: s, z: 0 });
+  const c = addNode(design, { x: s, y: 0, z: s });
   const result = connectSelectedPairs(design, [a.id, b.id, c.id], { strict: true });
   assert.equal(result.added, 3);
   assert.equal(calculateParts(design).invalidSticks, 0);
@@ -116,11 +119,13 @@ test('connect selected pairs skips square diagonals because all sticks are same 
   assert.ok(result.messages.some((message) => message.includes('square diagonals cannot be connected')));
 });
 
-test('pitched roof template keeps sloped sides close to one rod', () => {
+test('pitched roof template uses only equal-length face-diagonal and straight rods', () => {
   const design = createEmptyDesign();
   addPitchedRoofBay(design, { x: 0, y: 1, z: 0 });
-  assert.equal(calculateParts(design).invalidSticks, 0);
-  const peak = design.nodes.find((node) => Math.abs(node.position.x - 0.5) < 0.01 && node.position.z === 0);
+  const parts = calculateParts(design);
+  assert.equal(parts.invalidSticks, 0);
+  assert.equal(parts.sticks, 7);
+  const peak = design.nodes.find((node) => Math.abs(node.position.x - 1 / Math.sqrt(2)) < 0.01 && Math.abs(node.position.y - (1 + 1 / Math.sqrt(2))) < 0.01 && node.position.z === 0);
   const left = design.nodes.find((node) => node.position.x === 0 && node.position.y === 1 && node.position.z === 0);
   assert.ok(Math.abs(distance(peak.position, left.position) - 1) < 0.01);
 });
@@ -141,6 +146,8 @@ test('browser import map and controls exist', () => {
   assert.match(html, /data-mode="select"/);
   assert.match(html, /id="connect-selected"/);
   assert.match(html, /data-template="triangle"/);
-  assert.match(app, /import\('three'\)/);
-  assert.match(app, /type: 'preview'/);
+  assert.match(html, /app\.js\?v=rhombicuboctahedron-18-sockets/);
+  assert.match(app, /ConvexGeometry/);
+  assert.match(app, /createConnectorGeometry/);
+  assert.match(app, /face-diagonal sockets/);
 });
