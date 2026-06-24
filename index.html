@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Generate printable kids' fort-building prompt cards for indoor STEM and imaginative play." />
+    <title>Fort Card Generator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero__copy">
+        <p class="eyebrow">Printable play prompts</p>
+        <h1>Fort Card Generator</h1>
+        <p>
+          Make kid-friendly fort-building missions with story prompts, STEM twists,
+          safety notes, and material lists. Works fully offline in the browser.
+        </p>
+        <p class="note">
+          Independent fan-made style tool. Not affiliated with or endorsed by any toy brand.
+        </p>
+      </div>
+      <div class="hero__badge" aria-hidden="true">
+        <span>🏰</span>
+        <strong>Build</strong>
+        <em>Imagine • Test • Improve</em>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel controls" aria-labelledby="controls-title">
+        <div>
+          <p class="eyebrow">Generator settings</p>
+          <h2 id="controls-title">Create a new fort challenge</h2>
+        </div>
+
+        <form id="generator-form">
+          <label>
+            Age range
+            <select id="age">
+              <option value="preschool">3–5: simple + sensory</option>
+              <option value="early" selected>6–8: creative + guided</option>
+              <option value="older">9–12: bigger engineering challenge</option>
+            </select>
+          </label>
+
+          <label>
+            Play space
+            <select id="space">
+              <option value="indoor" selected>Indoor</option>
+              <option value="outdoor">Outdoor</option>
+              <option value="tiny">Tiny room / apartment</option>
+            </select>
+          </label>
+
+          <label>
+            Energy level
+            <select id="energy">
+              <option value="calm">Calm</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="active">Active</option>
+            </select>
+          </label>
+
+          <fieldset>
+            <legend>Available materials</legend>
+            <div class="checks" id="materials">
+              <label><input type="checkbox" value="blankets" checked /> Blankets</label>
+              <label><input type="checkbox" value="pillows" checked /> Pillows</label>
+              <label><input type="checkbox" value="chairs" checked /> Chairs</label>
+              <label><input type="checkbox" value="cardboard" /> Cardboard boxes</label>
+              <label><input type="checkbox" value="clothespins" checked /> Clothespins / clips</label>
+              <label><input type="checkbox" value="lights" /> String lights / torch</label>
+              <label><input type="checkbox" value="books" /> Books</label>
+              <label><input type="checkbox" value="cushions" checked /> Sofa cushions</label>
+            </div>
+          </fieldset>
+
+          <label>
+            Theme
+            <select id="theme">
+              <option value="surprise" selected>Surprise me</option>
+              <option value="castle">Castle</option>
+              <option value="space">Space station</option>
+              <option value="jungle">Jungle base</option>
+              <option value="ocean">Ocean cave</option>
+              <option value="dino">Dinosaur dig</option>
+              <option value="reading">Cozy reading den</option>
+            </select>
+          </label>
+
+          <label>
+            Number of cards
+            <input id="count" type="number" min="1" max="12" value="4" />
+          </label>
+
+          <label>
+            Seed <span class="muted">optional, for repeatable cards</span>
+            <input id="seed" type="text" placeholder="e.g. rainy-sunday" />
+          </label>
+
+          <div class="buttons">
+            <button type="submit">Generate cards</button>
+            <button type="button" class="secondary" id="randomize">Randomize seed</button>
+            <button type="button" class="secondary" id="print">Print / Save PDF</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel output" aria-labelledby="cards-title">
+        <div class="output__top">
+          <div>
+            <p class="eyebrow">Your printable cards</p>
+            <h2 id="cards-title">Fort missions</h2>
+          </div>
+          <button type="button" class="secondary" id="copy-link">Copy share link</button>
+        </div>
+        <div id="cards" class="cards" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Safety first: grown-ups should approve supports, avoid heavy objects overhead,
+        keep air gaps, and supervise lights or climbing.
+      </p>
+    </footer>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
