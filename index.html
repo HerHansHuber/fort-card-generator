@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="A realtime 3D ball-and-stick fort planner for estimating connector balls and rods before building." />
     <title>3D Fort Kit Planner</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=mobile-tools" />
     <script type="importmap">
       {
         "imports": {
@@ -46,14 +46,14 @@
           <p id="inventory-status" class="status good">Within entered inventory.</p>
         </section>
 
-        <section class="panel" aria-labelledby="build-title">
+        <section class="panel build-panel" aria-labelledby="build-title">
           <h2 id="build-title">Build tools</h2>
           <div class="tools" role="group" aria-label="Modes">
-            <button class="tool" data-mode="select">Select</button>
             <button class="tool active" data-mode="add">Add ball</button>
             <button class="tool" data-mode="connect">Connect</button>
-            <button class="tool" data-mode="move">Move</button>
             <button class="tool danger" data-mode="delete">Delete</button>
+            <button class="tool" data-mode="move">Move</button>
+            <button class="tool" data-mode="select">Select</button>
           </div>
           <button id="connect-selected" type="button" class="wide-action">Connect selected valid pairs</button>
 
@@ -112,12 +112,15 @@
             <strong id="selection-label">No selection</strong>
             <span id="message">Orbit: drag background • Zoom: wheel • Pan: right drag</span>
           </div>
-          <button id="fit-view">Fit view</button>
+          <div class="topbar-actions">
+            <button id="undo" type="button" disabled title="Undo last edit (Ctrl+Z)">Undo</button>
+            <button id="fit-view" type="button">Fit view</button>
+          </div>
         </div>
         <canvas id="scene" aria-label="3D fort kit planner"></canvas>
       </main>
     </div>
 
-    <script type="module" src="app.js?v=stick-length-slider"></script>
+    <script type="module" src="app.js?v=undo-history"></script>
   </body>
 </html>

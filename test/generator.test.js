@@ -11,10 +11,13 @@ import {
   calculateParts,
   connectSelectedPairs,
   createEmptyDesign,
+  createUndoHistory,
   deserializeDesign,
   distance,
   getSocketUsage,
   moveNodesByDelta,
+  pushUndoSnapshot,
+  restoreUndoSnapshot,
   scaleDesignToRodLength,
   serializeDesign,
   setRodLength
@@ -158,18 +161,72 @@ test('designs serialize and restore ids', () => {
   assert.equal(restored.nextStickId, 13);
 });
 
+test('undo snapshots restore the previous design and selected balls', () => {
+  const design = createEmptyDesign();
+  const history = createUndoHistory();
+  const first = addNode(design, { x: 0, y: 0, z: 0 });
+  pushUndoSnapshot(history, design, [first.id]);
+
+  const second = addNode(design, { x: 1, y: 0, z: 0 });
+  addStick(design, first.id, second.id, { strict: true });
+  assert.equal(design.nodes.length, 2);
+  assert.equal(design.sticks.length, 1);
+
+  const undo = restoreUndoSnapshot(history);
+  assert.equal(undo.ok, true);
+  assert.deepEqual(undo.selected, [first.id]);
+  assert.equal(undo.design.nodes.length, 1);
+  assert.equal(undo.design.sticks.length, 0);
+  assert.equal(undo.design.nextNodeId, 2);
+  assert.equal(restoreUndoSnapshot(history).ok, false);
+});
+
+test('undo snapshots include stick length scale changes', () => {
+  const design = createEmptyDesign();
+  const history = createUndoHistory();
+  addCubeBay(design);
+  pushUndoSnapshot(history, design, []);
+  scaleDesignToRodLength(design, 1.5, 1);
+
+  const undo = restoreUndoSnapshot(history);
+  assert.equal(undo.ok, true);
+  assert.equal(undo.design.rodLength, 1);
+  assert.ok(Math.abs(distance(undo.design.nodes[0].position, undo.design.nodes[1].position) - 1) < 0.001);
+  assert.match(serializeDesign(undo.design), /\"rodLength\": 1/);
+});
+
 test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /data-mode="select"/);
+  assert.match(html, /styles\.css\?v=mobile-tools/);
+  assert.match(html, /class="panel build-panel"/);
+  assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
+  assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
+  assert.ok(html.indexOf('data-mode="delete"') < html.indexOf('data-mode="move"'));
+  assert.ok(html.indexOf('data-mode="move"') < html.indexOf('data-mode="select"'));
   assert.match(html, /id="connect-selected"/);
   assert.match(html, /data-template="triangle"/);
   assert.match(html, /id="stick-length"/);
+  assert.match(html, /id="undo"/);
+  assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=stick-length-slider/);
+  assert.match(html, /app\.js\?v=undo-history/);
+  assert.match(app, /pushUndoSnapshot\(undoHistory, design, selected\)/);
+  assert.match(app, /restoreUndoSnapshot\(undoHistory\)/);
+  assert.match(app, /ctrlKey \|\| event\.metaKey/);
   assert.match(app, /scaleDesignToRodLength/);
   assert.match(app, /ConvexGeometry/);
   assert.match(app, /createConnectorGeometry/);
   assert.match(app, /face-diagonal sockets/);
+});
+
+test('mobile layout keeps the 3D scene visible and collapses controls to tool buttons plus undo', () => {
+  const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert.match(css, /@media \(max-width: 880px\)/);
+  assert.match(css, /\.viewport \{\s*position: fixed;\s*inset: 0;\s*height: 100dvh;/);
+  assert.match(css, /\.sidebar > :not\(\.build-panel\) \{ display: none; \}/);
+  assert.match(css, /\.build-panel > :not\(\.tools\) \{ display: none; \}/);
+  assert.match(css, /#fit-view \{ display: none; \}/);
+  assert.match(css, /\.topbar > div:first-child \{ display: none; \}/);
 });

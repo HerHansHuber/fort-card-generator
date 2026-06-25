@@ -40,6 +40,30 @@ export function createEmptyDesign() {
   return { nodes: [], sticks: [], nextNodeId: 1, nextStickId: 1, rodLength: ROD_LENGTH };
 }
 
+export const UNDO_LIMIT = 50;
+
+export function createUndoHistory() {
+  return [];
+}
+
+export function pushUndoSnapshot(history, design, selected = [], limit = UNDO_LIMIT) {
+  history.push({ design: serializeDesign(design), selected: [...selected] });
+  if (history.length > limit) history.splice(0, history.length - limit);
+  return history;
+}
+
+export function restoreUndoSnapshot(history) {
+  const snapshot = history.pop();
+  if (!snapshot) return { ok: false, reason: 'Nothing to undo.' };
+  const design = deserializeDesign(snapshot.design);
+  const nodeIds = new Set(design.nodes.map((node) => node.id));
+  return {
+    ok: true,
+    design,
+    selected: snapshot.selected.filter((id) => nodeIds.has(id))
+  };
+}
+
 export function setRodLength(length) {
   const next = Number(length);
   ROD_LENGTH = Number.isFinite(next) ? Math.max(0.1, next) : 1;
@@ -382,6 +406,7 @@ async function setupBrowserApp() {
   let meshes = new Map();
   let stickMeshes = new Map();
   let previewMeshes = [];
+  const undoHistory = createUndoHistory();
 
   const canvas = document.querySelector('#scene');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -456,6 +481,26 @@ async function setupBrowserApp() {
   const previewBadMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.35, transparent: true, opacity: 0.34 });
 
   function setMessage(text) { document.querySelector('#message').textContent = text; }
+  function updateUndoButton() {
+    const button = document.querySelector('#undo');
+    if (button) button.disabled = undoHistory.length === 0;
+  }
+  function rememberUndo() {
+    pushUndoSnapshot(undoHistory, design, selected);
+    updateUndoButton();
+  }
+  function undoLastEdit() {
+    const result = restoreUndoSnapshot(undoHistory);
+    if (!result.ok) {
+      setMessage(result.reason);
+      updateUndoButton();
+      return;
+    }
+    design = result.design;
+    selected = result.selected;
+    setMessage('Undid last edit.');
+    refreshScene();
+  }
   function nodeById(id) { return design.nodes.find((node) => node.id === id); }
   function nodeAt(position) { return design.nodes.find((node) => keyForPosition(node.position) === keyForPosition(position)); }
 
@@ -598,6 +643,7 @@ async function setupBrowserApp() {
       'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.'
     ].join('\n');
     document.querySelector('#selection-label').textContent = selected.length ? `Selected ${selected.length}: ${selected.join(', ')}` : 'No selection';
+    updateUndoButton();
   }
 
   function pointerToNdc(event) {
@@ -657,6 +703,7 @@ async function setupBrowserApp() {
       setMessage('That preview uses a socket that is already occupied.');
       return;
     }
+    rememberUndo();
     const target = payload.targetId ? nodeById(payload.targetId) : addNode(design, payload.targetPosition);
     const strict = true;
     const result = addStick(design, payload.fromId, target.id, { strict });
@@ -679,6 +726,7 @@ async function setupBrowserApp() {
     if (hit?.userData.type === 'node') {
       const id = hit.userData.id;
       if (mode === 'delete') {
+        rememberUndo();
         removeNode(design, id);
         selected = selected.filter((item) => item !== id);
         setMessage('Ball and attached sticks deleted.');
@@ -689,6 +737,7 @@ async function setupBrowserApp() {
       return;
     }
     if (hit?.userData.type === 'stick' && mode === 'delete') {
+      rememberUndo();
       removeStick(design, hit.userData.id);
       setMessage('Stick deleted.');
       refreshScene();
@@ -697,6 +746,7 @@ async function setupBrowserApp() {
     const point = getGridPoint(event);
     if (!point) return;
     if (mode === 'add') {
+      rememberUndo();
       const node = addNode(design, point);
       selected = [node.id];
       setMessage(`Ball ${node.id} placed at ${point.x}, ${point.y}, ${point.z}.`);
@@ -704,7 +754,10 @@ async function setupBrowserApp() {
     } else if (mode === 'move' && selected.length) {
       const anchor = nodeById(selected[0]);
       const delta = { x: point.x - anchor.position.x, y: point.y - anchor.position.y, z: point.z - anchor.position.z };
+      const historyLength = undoHistory.length;
+      rememberUndo();
       const result = moveNodesByDelta(design, selected, delta);
+      if (!result.ok) undoHistory.splice(historyLength);
       setMessage(result.ok ? `Moved ${result.moved} selected ball${result.moved === 1 ? '' : 's'}.` : result.reason);
       refreshScene();
     } else if (mode === 'select' && !event.shiftKey) {
@@ -735,6 +788,7 @@ async function setupBrowserApp() {
   document.querySelector('#stick-length').addEventListener('input', (event) => {
     const previous = ROD_LENGTH;
     const next = Number(event.target.value);
+    rememberUndo();
     const result = scaleDesignToRodLength(design, next, previous);
     document.querySelector('#stick-length-label').textContent = result.rodLength.toFixed(2);
     setMessage(`Stick length changed to ${result.rodLength.toFixed(2)}. Existing balls/sticks were rescaled by ${result.factor.toFixed(2)}×.`);
@@ -743,7 +797,10 @@ async function setupBrowserApp() {
   document.querySelectorAll('#owned-balls, #owned-sticks, #strict-rods').forEach((input) => input.addEventListener('input', () => refreshScene()));
   document.querySelector('#connect-selected').addEventListener('click', () => {
     const strict = true;
+    const historyLength = undoHistory.length;
+    rememberUndo();
     const result = connectSelectedPairs(design, selected, { strict });
+    if (!result.added) undoHistory.splice(historyLength);
     setMessage(result.added ? `Connected ${result.added} valid selected pair${result.added === 1 ? '' : 's'}.` : `No valid selected pairs. ${result.messages[0] || ''}`);
     refreshScene();
   });
@@ -756,6 +813,7 @@ async function setupBrowserApp() {
 
   document.querySelectorAll('[data-template]').forEach((button) => button.addEventListener('click', () => {
     const action = button.dataset.template;
+    rememberUndo();
     if (action === 'reset') {
       design = createEmptyDesign();
       selected = [];
@@ -798,10 +856,19 @@ async function setupBrowserApp() {
   document.querySelector('#file-input').addEventListener('change', async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+    rememberUndo();
     design = deserializeDesign(await file.text());
     selected = [];
     setMessage('JSON design loaded.');
     refreshScene();
+  });
+
+  document.querySelector('#undo').addEventListener('click', undoLastEdit);
+  window.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      undoLastEdit();
+    }
   });
 
   document.querySelector('#fit-view').addEventListener('click', () => {
