@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  CONNECTOR_COLORS,
   SOCKET_DIRECTIONS,
+  STICK_COLOR,
   addCubeBay,
   addEquilateralTriangle,
   addNode,
@@ -15,7 +17,9 @@ import {
   deserializeDesign,
   distance,
   getSocketUsage,
+  getConnectorColor,
   moveNodesByDelta,
+  pickConnectorColor,
   pushUndoSnapshot,
   restoreUndoSnapshot,
   scaleDesignToRodLength,
@@ -25,6 +29,22 @@ import {
 
 test.beforeEach(() => {
   setRodLength(1);
+});
+
+test('visual defaults use 2-unit rods, yellow/orange connector colors, and darker blue sticks', () => {
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(app, /export let ROD_LENGTH = 2/);
+  assert.match(html, /id="stick-length"[^>]+value="2"/);
+  assert.match(html, /id="stick-length-label">2\.00/);
+  assert.deepEqual(CONNECTOR_COLORS, [0xffc928, 0xff7a2f]);
+  assert.equal(STICK_COLOR, 0x0736c9);
+  assert.equal(pickConnectorColor(() => 0), CONNECTOR_COLORS[0]);
+  assert.equal(pickConnectorColor(() => 0.99), CONNECTOR_COLORS[1]);
+  const design = createEmptyDesign();
+  const node = addNode(design, { x: 0, y: 0, z: 0 });
+  assert.ok(CONNECTOR_COLORS.includes(node.color));
+  assert.equal(getConnectorColor(node), node.color);
 });
 
 test('18-hole socket model exposes 6 axis and 12 face-diagonal directions', () => {
@@ -211,7 +231,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /id="undo"/);
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=undo-history/);
+  assert.match(html, /app\.js\?v=rod2-colors/);
   assert.match(app, /pushUndoSnapshot\(undoHistory, design, selected\)/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory\)/);
   assert.match(app, /ctrlKey \|\| event\.metaKey/);

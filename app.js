@@ -1,7 +1,9 @@
-export let ROD_LENGTH = 1;
+export let ROD_LENGTH = 2;
 export const ROD_TOLERANCE = 0.08;
 export const SOCKET_ANGLE_TOLERANCE_DEG = 8;
 export const MAX_SOCKET_DEGREE = 18;
+export const CONNECTOR_COLORS = [0xffc928, 0xff7a2f];
+export const STICK_COLOR = 0x0736c9;
 
 const DEG = Math.PI / 180;
 
@@ -90,6 +92,20 @@ export function keyForPosition(position) {
   return [position.x, position.y, position.z].map((value) => roundCoord(value).toFixed(3)).join(',');
 }
 
+export function pickConnectorColor(random = Math.random) {
+  const index = Math.min(CONNECTOR_COLORS.length - 1, Math.floor(random() * CONNECTOR_COLORS.length));
+  return CONNECTOR_COLORS[index];
+}
+
+export function getConnectorColor(nodeOrId) {
+  if (typeof nodeOrId === 'object' && nodeOrId !== null) {
+    if (CONNECTOR_COLORS.includes(nodeOrId.color)) return nodeOrId.color;
+    nodeOrId = nodeOrId.id;
+  }
+  const index = Math.abs(Number(nodeOrId) || 0) % CONNECTOR_COLORS.length;
+  return CONNECTOR_COLORS[index];
+}
+
 export function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
@@ -142,7 +158,7 @@ export function addNode(design, position) {
   const normalized = normalizePosition(position);
   const existing = design.nodes.find((node) => keyForPosition(node.position) === keyForPosition(normalized));
   if (existing) return existing;
-  const node = { id: design.nextNodeId++, position: normalized };
+  const node = { id: design.nextNodeId++, position: normalized, color: pickConnectorColor() };
   design.nodes.push(node);
   return node;
 }
@@ -314,7 +330,11 @@ export function deserializeDesign(json) {
   const parsed = typeof json === 'string' ? JSON.parse(json) : json;
   setRodLength(parsed.rodLength ?? 1);
   const design = createEmptyDesign();
-  design.nodes = (parsed.nodes || []).map((node) => ({ id: Number(node.id), position: normalizePosition(node.position) }));
+  design.nodes = (parsed.nodes || []).map((node) => ({
+    id: Number(node.id),
+    position: normalizePosition(node.position),
+    color: CONNECTOR_COLORS.includes(node.color) ? node.color : getConnectorColor(node.id)
+  }));
   design.sticks = (parsed.sticks || []).map((stick) => ({
     id: Number(stick.id),
     a: Number(stick.a),
@@ -470,11 +490,11 @@ async function setupBrowserApp() {
   const ballGeometry = createConnectorGeometry();
   const socketHoleGeometry = new THREE.CylinderGeometry(0.046, 0.038, 0.065, 24, 1, true);
   const socketRimGeometry = new THREE.TorusGeometry(0.047, 0.007, 8, 24);
-  const ballMaterial = new THREE.MeshStandardMaterial({ color: 0x126bd1, roughness: 0.62, metalness: 0.01, flatShading: true });
-  const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x5a3b00, roughness: 0.48, flatShading: true });
-  const socketMaterial = new THREE.MeshStandardMaterial({ color: 0x06111f, roughness: 0.82 });
-  const usedSocketMaterial = new THREE.MeshStandardMaterial({ color: 0x073b55, emissive: 0x0f6d91, roughness: 0.55 });
-  const stickMaterial = new THREE.MeshStandardMaterial({ color: 0x52d1ff, roughness: 0.42 });
+  const ballMaterials = new Map(CONNECTOR_COLORS.map((color) => [color, new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.01, flatShading: true })]));
+  const selectedBallMaterial = new THREE.MeshStandardMaterial({ color: 0xfff7d6, emissive: 0x6b4a00, roughness: 0.48, flatShading: true });
+  const socketMaterial = new THREE.MeshStandardMaterial({ color: 0x7a1d0b, roughness: 0.82 });
+  const usedSocketMaterial = new THREE.MeshStandardMaterial({ color: 0x2f1a5f, emissive: 0x07186a, roughness: 0.55 });
+  const stickMaterial = new THREE.MeshStandardMaterial({ color: STICK_COLOR, roughness: 0.42 });
   const badStickMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.42 });
   const previewStickMaterial = new THREE.MeshStandardMaterial({ color: 0x5dd39e, roughness: 0.35, transparent: true, opacity: 0.42 });
   const previewNewMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.35, transparent: true, opacity: 0.38 });
@@ -520,7 +540,8 @@ async function setupBrowserApp() {
     const root = new THREE.Group();
     root.position.set(node.position.x, node.position.y, node.position.z);
     root.userData = { type: 'node', id: node.id };
-    const shell = new THREE.Mesh(ballGeometry, selected.includes(node.id) ? selectedBallMaterial : ballMaterial);
+    const connectorMaterial = ballMaterials.get(getConnectorColor(node));
+    const shell = new THREE.Mesh(ballGeometry, selected.includes(node.id) ? selectedBallMaterial : connectorMaterial);
     shell.userData = { type: 'node', id: node.id };
     root.add(shell);
     const usedSockets = new Set(getSocketUsage(design, node.id).map((usage) => usage.socketId));
