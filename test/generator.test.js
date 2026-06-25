@@ -21,6 +21,7 @@ import {
   moveNodesByDelta,
   pickConnectorColor,
   pushUndoSnapshot,
+  restoreRedoSnapshot,
   restoreUndoSnapshot,
   scaleDesignToRodLength,
   serializeDesign,
@@ -201,6 +202,29 @@ test('undo snapshots restore the previous design and selected balls', () => {
   assert.equal(restoreUndoSnapshot(history).ok, false);
 });
 
+test('redo snapshots reapply an undone edit', () => {
+  const design = createEmptyDesign();
+  const undoHistory = createUndoHistory();
+  const redoHistory = createUndoHistory();
+  const first = addNode(design, { x: 0, y: 0, z: 0 });
+  pushUndoSnapshot(undoHistory, design, [first.id]);
+
+  const second = addNode(design, { x: 1, y: 0, z: 0 });
+  addStick(design, first.id, second.id, { strict: true });
+  const undo = restoreUndoSnapshot(undoHistory, redoHistory, design, [second.id]);
+  assert.equal(undo.ok, true);
+  assert.equal(redoHistory.length, 1);
+  assert.equal(undo.design.nodes.length, 1);
+
+  const redo = restoreRedoSnapshot(redoHistory, undoHistory, undo.design, undo.selected);
+  assert.equal(redo.ok, true);
+  assert.deepEqual(redo.selected, [second.id]);
+  assert.equal(redo.design.nodes.length, 2);
+  assert.equal(redo.design.sticks.length, 1);
+  assert.equal(redoHistory.length, 0);
+  assert.equal(restoreRedoSnapshot(redoHistory, undoHistory, redo.design, redo.selected).ok, false);
+});
+
 test('undo snapshots include stick length scale changes', () => {
   const design = createEmptyDesign();
   const history = createUndoHistory();
@@ -229,16 +253,28 @@ test('browser import map and controls exist', () => {
   assert.match(html, /data-template="triangle"/);
   assert.match(html, /id="stick-length"/);
   assert.match(html, /id="undo"/);
+  assert.match(html, /id="redo"/);
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
+  assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=rod2-colors/);
-  assert.match(app, /pushUndoSnapshot\(undoHistory, design, selected\)/);
-  assert.match(app, /restoreUndoSnapshot\(undoHistory\)/);
-  assert.match(app, /ctrlKey \|\| event\.metaKey/);
+  assert.match(html, /app\.js\?v=redo-hit-targets/);
+  assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
+  assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
+  assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
+  assert.match(app, /event\.shiftKey && event\.key\.toLowerCase\(\) === 'z'/);
   assert.match(app, /scaleDesignToRodLength/);
   assert.match(app, /ConvexGeometry/);
   assert.match(app, /createConnectorGeometry/);
   assert.match(app, /face-diagonal sockets/);
+});
+
+test('stick and connect preview rods have larger invisible hit targets for easier selection', () => {
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(app, /const STICK_HIT_RADIUS = 0\.13/);
+  assert.match(app, /const PREVIEW_STICK_HIT_RADIUS = 0\.12/);
+  assert.match(app, /stickHitMaterial/);
+  assert.match(app, /makeHitTarget\(a\.position, b\.position, \{ type: 'stick', id: stick\.id \}, STICK_HIT_RADIUS\)/);
+  assert.match(app, /makeHitTarget\(from\.position, targetPosition, \{ fromId: from\.id, targetId: existing\?\.id, targetPosition, socketId: socket\.id, enabled: canUseExisting \}, PREVIEW_STICK_HIT_RADIUS\)/);
 });
 
 test('mobile layout keeps the 3D scene visible and collapses controls to tool buttons plus undo', () => {

@@ -4,6 +4,8 @@ export const SOCKET_ANGLE_TOLERANCE_DEG = 8;
 export const MAX_SOCKET_DEGREE = 18;
 export const CONNECTOR_COLORS = [0xffc928, 0xff7a2f];
 export const STICK_COLOR = 0x0736c9;
+export const STICK_HIT_RADIUS = 0.13;
+export const PREVIEW_STICK_HIT_RADIUS = 0.12;
 
 const DEG = Math.PI / 180;
 
@@ -54,9 +56,10 @@ export function pushUndoSnapshot(history, design, selected = [], limit = UNDO_LI
   return history;
 }
 
-export function restoreUndoSnapshot(history) {
-  const snapshot = history.pop();
-  if (!snapshot) return { ok: false, reason: 'Nothing to undo.' };
+function restoreSnapshot(sourceHistory, targetHistory, currentDesign, currentSelected, emptyReason) {
+  const snapshot = sourceHistory.pop();
+  if (!snapshot) return { ok: false, reason: emptyReason };
+  if (targetHistory && currentDesign) pushUndoSnapshot(targetHistory, currentDesign, currentSelected || []);
   const design = deserializeDesign(snapshot.design);
   const nodeIds = new Set(design.nodes.map((node) => node.id));
   return {
@@ -64,6 +67,14 @@ export function restoreUndoSnapshot(history) {
     design,
     selected: snapshot.selected.filter((id) => nodeIds.has(id))
   };
+}
+
+export function restoreUndoSnapshot(history, redoHistory, currentDesign, currentSelected = []) {
+  return restoreSnapshot(history, redoHistory, currentDesign, currentSelected, 'Nothing to undo.');
+}
+
+export function restoreRedoSnapshot(redoHistory, undoHistory, currentDesign, currentSelected = []) {
+  return restoreSnapshot(redoHistory, undoHistory, currentDesign, currentSelected, 'Nothing to redo.');
 }
 
 export function setRodLength(length) {
@@ -427,6 +438,7 @@ async function setupBrowserApp() {
   let stickMeshes = new Map();
   let previewMeshes = [];
   const undoHistory = createUndoHistory();
+  const redoHistory = createUndoHistory();
 
   const canvas = document.querySelector('#scene');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -496,29 +508,45 @@ async function setupBrowserApp() {
   const usedSocketMaterial = new THREE.MeshStandardMaterial({ color: 0x2f1a5f, emissive: 0x07186a, roughness: 0.55 });
   const stickMaterial = new THREE.MeshStandardMaterial({ color: STICK_COLOR, roughness: 0.42 });
   const badStickMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.42 });
+  const stickHitMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.001, depthWrite: false });
   const previewStickMaterial = new THREE.MeshStandardMaterial({ color: 0x5dd39e, roughness: 0.35, transparent: true, opacity: 0.42 });
   const previewNewMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.35, transparent: true, opacity: 0.38 });
   const previewBadMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.35, transparent: true, opacity: 0.34 });
 
   function setMessage(text) { document.querySelector('#message').textContent = text; }
-  function updateUndoButton() {
-    const button = document.querySelector('#undo');
-    if (button) button.disabled = undoHistory.length === 0;
+  function updateHistoryButtons() {
+    const undoButton = document.querySelector('#undo');
+    const redoButton = document.querySelector('#redo');
+    if (undoButton) undoButton.disabled = undoHistory.length === 0;
+    if (redoButton) redoButton.disabled = redoHistory.length === 0;
   }
   function rememberUndo() {
     pushUndoSnapshot(undoHistory, design, selected);
-    updateUndoButton();
+    redoHistory.length = 0;
+    updateHistoryButtons();
   }
   function undoLastEdit() {
-    const result = restoreUndoSnapshot(undoHistory);
+    const result = restoreUndoSnapshot(undoHistory, redoHistory, design, selected);
     if (!result.ok) {
       setMessage(result.reason);
-      updateUndoButton();
+      updateHistoryButtons();
       return;
     }
     design = result.design;
     selected = result.selected;
     setMessage('Undid last edit.');
+    refreshScene();
+  }
+  function redoLastEdit() {
+    const result = restoreRedoSnapshot(redoHistory, undoHistory, design, selected);
+    if (!result.ok) {
+      setMessage(result.reason);
+      updateHistoryButtons();
+      return;
+    }
+    design = result.design;
+    selected = result.selected;
+    setMessage('Redid last edit.');
     refreshScene();
   }
   function nodeById(id) { return design.nodes.find((node) => node.id === id); }
@@ -533,6 +561,13 @@ async function setupBrowserApp() {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(mid);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize());
+    return mesh;
+  }
+
+  function makeHitTarget(a, b, payload, radius) {
+    const mesh = cylinderBetween(a, b, stickHitMaterial, radius);
+    mesh.userData = payload;
+    mesh.renderOrder = -1;
     return mesh;
   }
 
@@ -594,6 +629,8 @@ async function setupBrowserApp() {
       const material = canUseExisting ? (existing ? previewStickMaterial : previewNewMaterial) : previewBadMaterial;
       const rod = cylinderBetween(from.position, targetPosition, material, 0.024);
       addPreviewMesh(rod, { fromId: from.id, targetId: existing?.id, targetPosition, socketId: socket.id, enabled: canUseExisting });
+      const rodHit = makeHitTarget(from.position, targetPosition, { fromId: from.id, targetId: existing?.id, targetPosition, socketId: socket.id, enabled: canUseExisting }, PREVIEW_STICK_HIT_RADIUS);
+      addPreviewMesh(rodHit, { fromId: from.id, targetId: existing?.id, targetPosition, socketId: socket.id, enabled: canUseExisting });
       const endpoint = new THREE.Mesh(new THREE.SphereGeometry(existing ? 0.105 : 0.085, 18, 12), material);
       endpoint.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
       addPreviewMesh(endpoint, { fromId: from.id, targetId: existing?.id, targetPosition, socketId: socket.id, enabled: canUseExisting });
@@ -613,8 +650,11 @@ async function setupBrowserApp() {
       if (!a || !b) continue;
       const mesh = cylinderBetween(a.position, b.position, stick.valid ? stickMaterial : badStickMaterial, 0.038);
       mesh.userData = { type: 'stick', id: stick.id };
-      structureGroup.add(mesh);
-      stickMeshes.set(stick.id, mesh);
+      const stickRoot = new THREE.Group();
+      stickRoot.add(mesh);
+      stickRoot.add(makeHitTarget(a.position, b.position, { type: 'stick', id: stick.id }, STICK_HIT_RADIUS));
+      structureGroup.add(stickRoot);
+      stickMeshes.set(stick.id, stickRoot);
     }
 
     for (const node of design.nodes) {
@@ -664,7 +704,7 @@ async function setupBrowserApp() {
       'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.'
     ].join('\n');
     document.querySelector('#selection-label').textContent = selected.length ? `Selected ${selected.length}: ${selected.join(', ')}` : 'No selection';
-    updateUndoButton();
+    updateHistoryButtons();
   }
 
   function pointerToNdc(event) {
@@ -885,10 +925,15 @@ async function setupBrowserApp() {
   });
 
   document.querySelector('#undo').addEventListener('click', undoLastEdit);
+  document.querySelector('#redo').addEventListener('click', redoLastEdit);
   window.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+    const modifierPressed = event.ctrlKey || event.metaKey;
+    if (modifierPressed && event.key.toLowerCase() === 'z' && !event.shiftKey) {
       event.preventDefault();
       undoLastEdit();
+    } else if (modifierPressed && (event.key.toLowerCase() === 'y' || (event.shiftKey && event.key.toLowerCase() === 'z'))) {
+      event.preventDefault();
+      redoLastEdit();
     }
   });
 
