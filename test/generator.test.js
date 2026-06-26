@@ -318,15 +318,15 @@ test('top-left dropdowns expose JSON actions and camera choices', () => {
   assert.match(html, /<option value="top">Top orthographic<\/option>/);
   assert.match(html, /<option value="side">Side orthographic<\/option>/);
   assert.match(html, /<option value="front">Front orthographic<\/option>/);
-  assert.match(html, /<option value="all">All views<\/option>/);
-  assert.deepEqual(CAMERA_VIEW_IDS, ['perspective', 'top', 'side', 'front', 'all']);
+  assert.match(html, /<option value="clear">Clear all<\/option>/);
+  assert.doesNotMatch(html, /<option value="all">All views<\/option>/);
+  assert.deepEqual(CAMERA_VIEW_IDS, ['perspective', 'top', 'side', 'front']);
   assert.ok(html.indexOf('id="json-menu"') < html.indexOf('id="camera-view"'));
   assert.match(app, /document\.querySelector\('#json-menu'\)\.addEventListener\('change'/);
   assert.match(app, /document\.querySelector\('#camera-view'\)\.addEventListener\('change'/);
+  assert.match(app, /action === 'clear'/);
   assert.match(app, /new THREE\.OrthographicCamera/);
-  assert.match(app, /renderAllViews/);
-  assert.match(app, /renderer\.setScissorTest\(true\)/);
-  assert.match(app, /getPointerCamera/);
+  assert.doesNotMatch(app, /renderAllViews/);
 });
 
 test('copy design link creates a share URL and has a clipboard fallback path', () => {
@@ -355,14 +355,14 @@ test('browser state snapshots include design, UI, and selected camera state for 
     mode: 'connect',
     height: '1.5',
     inventory: { balls: 12, sticks: 20 },
-    cameraView: 'all'
+    cameraView: 'front'
   });
   assert.equal(LOCAL_STORAGE_KEY, 'tiny-fort-generator-state-v1');
   assert.deepEqual(snapshot.selected, [second.id]);
   assert.equal(snapshot.mode, 'connect');
   assert.equal(snapshot.height, '1.5');
   assert.deepEqual(snapshot.inventory, { balls: 12, sticks: 20 });
-  assert.equal(snapshot.cameraView, 'all');
+  assert.equal(snapshot.cameraView, 'front');
 
   const restored = restoreStoredState(JSON.stringify(snapshot));
   assert.equal(restored.ok, true);
@@ -371,7 +371,7 @@ test('browser state snapshots include design, UI, and selected camera state for 
   assert.deepEqual(restored.selected, [second.id]);
   assert.equal(restored.mode, 'connect');
   assert.equal(restored.height, '1.5');
-  assert.equal(restored.cameraView, 'all');
+  assert.equal(restored.cameraView, 'front');
 });
 
 test('stick and connect preview rods have larger invisible hit targets for easier selection', () => {

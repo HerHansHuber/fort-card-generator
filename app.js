@@ -7,7 +7,7 @@ export const STICK_COLOR = 0x0736c9;
 export const STICK_HIT_RADIUS = 0.13;
 export const PREVIEW_STICK_HIT_RADIUS = 0.12;
 export const LOCAL_STORAGE_KEY = 'tiny-fort-generator-state-v1';
-export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front', 'all'];
+export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front'];
 
 const DEG = Math.PI / 180;
 
@@ -721,13 +721,12 @@ async function setupBrowserApp() {
 
   function setCameraView(nextView, { persist = true } = {}) {
     cameraView = CAMERA_VIEW_IDS.includes(nextView) ? nextView : 'perspective';
-    camera = cameraView === 'all' ? perspectiveCamera : (viewCameras[cameraView] || perspectiveCamera);
+    camera = viewCameras[cameraView] || perspectiveCamera;
     controls.object = camera;
     const cameraSelect = document.querySelector('#camera-view');
     if (cameraSelect) cameraSelect.value = cameraView;
     updateCameraProjection();
     for (const view of ['perspective', 'top', 'side', 'front']) frameCamera(view);
-    controls.enabled = cameraView !== 'all';
     controls.update();
     if (persist) saveState();
   }
@@ -900,28 +899,9 @@ async function setupBrowserApp() {
 
   function getPointerCamera(event) {
     const rect = canvas.getBoundingClientRect();
-    let left = rect.left;
-    let top = rect.top;
-    let width = rect.width;
-    let height = rect.height;
-    let pointerCamera = camera;
-    if (cameraView === 'all') {
-      const localX = event.clientX - rect.left;
-      const localY = event.clientY - rect.top;
-      const halfWidth = rect.width / 2;
-      const halfHeight = rect.height / 2;
-      const right = localX >= halfWidth;
-      const bottom = localY >= halfHeight;
-      const view = !right && !bottom ? 'perspective' : right && !bottom ? 'top' : !right && bottom ? 'side' : 'front';
-      pointerCamera = viewCameras[view];
-      left = rect.left + (right ? halfWidth : 0);
-      top = rect.top + (bottom ? halfHeight : 0);
-      width = halfWidth;
-      height = halfHeight;
-    }
-    pointer.x = ((event.clientX - left) / width) * 2 - 1;
-    pointer.y = -((event.clientY - top) / height) * 2 + 1;
-    return pointerCamera;
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    return camera;
   }
 
   function getGridPoint(event) {
@@ -1159,7 +1139,17 @@ async function setupBrowserApp() {
   });
 
   document.querySelector('#camera-view').addEventListener('change', (event) => {
-    setCameraView(event.target.value);
+    const action = event.target.value;
+    if (action === 'clear') {
+      rememberUndo();
+      design = createEmptyDesign();
+      selected = [];
+      setMessage('Design cleared.');
+      event.target.value = cameraView;
+      refreshScene();
+      return;
+    }
+    setCameraView(action);
     setMessage(`Camera changed to ${event.target.selectedOptions[0].textContent}.`);
   });
 
@@ -1198,30 +1188,8 @@ async function setupBrowserApp() {
   }
   window.addEventListener('resize', resize);
 
-  function renderViewport(view, x, y, width, height) {
-    renderer.setViewport(x, y, width, height);
-    renderer.setScissor(x, y, width, height);
-    renderer.render(scene, frameCamera(view));
-  }
-
-  function renderAllViews() {
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    const halfWidth = Math.floor(width / 2);
-    const halfHeight = Math.floor(height / 2);
-    renderer.setScissorTest(true);
-    renderViewport('perspective', 0, halfHeight, halfWidth, height - halfHeight);
-    renderViewport('top', halfWidth, halfHeight, width - halfWidth, height - halfHeight);
-    renderViewport('side', 0, 0, halfWidth, halfHeight);
-    renderViewport('front', halfWidth, 0, width - halfWidth, halfHeight);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, width, height);
-  }
-
   function renderScene() {
-    if (cameraView === 'all') renderAllViews();
-    else renderer.render(scene, camera);
+    renderer.render(scene, camera);
   }
 
   try {
