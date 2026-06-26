@@ -279,7 +279,7 @@ test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /styles\.css\?v=extrude-clear-camera/);
+  assert.match(html, /styles\.css\?v=iphone-json-import/);
   assert.match(html, /class="panel build-panel"/);
   assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
   assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
@@ -294,7 +294,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=extrude-clear-camera/);
+  assert.match(html, /app\.js\?v=iphone-json-import/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
   assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
@@ -305,14 +305,20 @@ test('browser import map and controls exist', () => {
   assert.match(app, /face-diagonal sockets/);
 });
 
-test('top-left dropdowns expose JSON actions and camera choices', () => {
+test('top-left dropdowns expose iPhone-safe JSON actions and camera choices', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.ok(html.indexOf('class="topbar-menus"') < html.indexOf('id="selection-label"'));
-  assert.match(html, /<select id="json-menu"[^>]*aria-label="JSON import and export"/);
-  assert.match(html, /<option value="download">Download JSON<\/option>/);
-  assert.match(html, /<option value="load">Load JSON<\/option>/);
+  assert.match(html, /<details class="topbar-dropdown json-dropdown"/);
+  assert.match(html, /<summary[^>]*>JSON<\/summary>/);
+  assert.match(html, /<button id="copy-link"[^>]*>Copy design link<\/button>/);
+  assert.match(html, /<button id="download-json"[^>]*>Download JSON<\/button>/);
+  assert.match(html, /<label id="load-json"[^>]*for="file-input"[^>]*>Import JSON<\/label>/);
   assert.match(html, /id="file-input" type="file" accept="application\/json" hidden/);
+  assert.doesNotMatch(html, /<select id="json-menu"/);
+  assert.doesNotMatch(app, /querySelector\('#json-menu'\)/);
+  assert.match(app, /document\.querySelector\('#copy-link'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#download-json'\)\.addEventListener\('click'/);
   assert.match(html, /<select id="camera-view"[^>]*aria-label="Camera view"/);
   assert.match(html, /<option value="perspective" selected>Perspective<\/option>/);
   assert.match(html, /<option value="top">Top orthographic<\/option>/);
@@ -321,8 +327,7 @@ test('top-left dropdowns expose JSON actions and camera choices', () => {
   assert.match(html, /<option value="clear">Clear all<\/option>/);
   assert.doesNotMatch(html, /<option value="all">All views<\/option>/);
   assert.deepEqual(CAMERA_VIEW_IDS, ['perspective', 'top', 'side', 'front']);
-  assert.ok(html.indexOf('id="json-menu"') < html.indexOf('id="camera-view"'));
-  assert.match(app, /document\.querySelector\('#json-menu'\)\.addEventListener\('change'/);
+  assert.ok(html.indexOf('class="json-dropdown"') < html.indexOf('id="camera-view"'));
   assert.match(app, /document\.querySelector\('#camera-view'\)\.addEventListener\('change'/);
   assert.match(app, /action === 'clear'/);
   assert.match(app, /new THREE\.OrthographicCamera/);

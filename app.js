@@ -1130,12 +1130,13 @@ async function setupBrowserApp() {
     setMessage('JSON design downloaded.');
   }
 
-  document.querySelector('#json-menu').addEventListener('change', async (event) => {
-    const action = event.target.value;
-    event.target.value = '';
-    if (action === 'copy') await copyDesignLink();
-    else if (action === 'download') downloadDesignJson();
-    else if (action === 'load') document.querySelector('#file-input').click();
+  document.querySelector('#copy-link').addEventListener('click', async () => {
+    await copyDesignLink();
+    document.querySelector('.json-dropdown')?.removeAttribute('open');
+  });
+  document.querySelector('#download-json').addEventListener('click', () => {
+    downloadDesignJson();
+    document.querySelector('.json-dropdown')?.removeAttribute('open');
   });
 
   document.querySelector('#camera-view').addEventListener('change', (event) => {
@@ -1160,6 +1161,7 @@ async function setupBrowserApp() {
     design = deserializeDesign(await file.text());
     selected = [];
     event.target.value = '';
+    document.querySelector('.json-dropdown')?.removeAttribute('open');
     setMessage('JSON design loaded.');
     refreshScene();
   });

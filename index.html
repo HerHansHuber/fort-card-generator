@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="A realtime 3D ball-and-stick fort planner for estimating connector balls and rods before building." />
     <title>3D Fort Kit Planner</title>
-    <link rel="stylesheet" href="styles.css?v=extrude-clear-camera" />
+    <link rel="stylesheet" href="styles.css?v=iphone-json-import" />
     <script type="importmap">
       {
         "imports": {
@@ -103,12 +103,14 @@
         <div class="topbar">
           <div class="topbar-left">
             <div class="topbar-menus" aria-label="File and camera controls">
-              <select id="json-menu" aria-label="JSON import and export">
-                <option value="" selected>JSON</option>
-                <option value="copy">Copy design link</option>
-                <option value="download">Download JSON</option>
-                <option value="load">Load JSON</option>
-              </select>
+              <details class="topbar-dropdown json-dropdown">
+                <summary aria-label="JSON import and export">JSON</summary>
+                <div class="topbar-dropdown__menu">
+                  <button id="copy-link" type="button">Copy design link</button>
+                  <button id="download-json" type="button">Download JSON</button>
+                  <label id="load-json" class="topbar-dropdown__item" for="file-input">Import JSON</label>
+                </div>
+              </details>
               <select id="camera-view" aria-label="Camera view">
                 <option value="perspective" selected>Perspective</option>
                 <option value="top">Top orthographic</option>
@@ -133,6 +135,6 @@
       </main>
     </div>
 
-    <script type="module" src="app.js?v=extrude-clear-camera"></script>
+    <script type="module" src="app.js?v=iphone-json-import"></script>
   </body>
 </html>
