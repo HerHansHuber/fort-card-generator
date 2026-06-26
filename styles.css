@@ -27,7 +27,7 @@ body {
   color: var(--ink);
 }
 
-button, input, textarea {
+button, input, textarea, select {
   font: inherit;
 }
 
@@ -162,7 +162,7 @@ label {
   font-weight: 700;
 }
 
-input[type="number"], textarea {
+input[type="number"], textarea, select {
   width: 100%;
   margin-top: 6px;
   padding: 10px;
@@ -280,6 +280,30 @@ input[type="range"] {
   align-items: center;
 }
 
+.topbar-left {
+  display: flex;
+  min-width: 0;
+  gap: 12px;
+  align-items: center;
+}
+
+.topbar-menus {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.topbar-menus select {
+  width: auto;
+  min-width: 94px;
+  margin-top: 0;
+  padding: 7px 28px 7px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 #selection-label {
   display: block;
 }
@@ -356,7 +380,7 @@ input[type="range"] {
     top: 10px;
     left: 10px;
     right: 10px;
-    justify-content: flex-end;
+    justify-content: space-between;
     padding: 0;
     border: 0;
     background: transparent;
@@ -364,7 +388,26 @@ input[type="range"] {
     pointer-events: none;
   }
 
-  .topbar > div:first-child { display: none; }
+  .topbar-left {
+    pointer-events: auto;
+  }
+
+  .topbar-left > div:not(.topbar-menus) { display: none; }
+
+  .topbar-menus {
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(4, 10, 19, 0.78);
+    backdrop-filter: blur(14px);
+  }
+
+  .topbar-menus select {
+    max-width: 118px;
+    min-width: 82px;
+    padding: 7px 24px 7px 9px;
+    font-size: 0.7rem;
+  }
 
   .topbar-actions {
     pointer-events: auto;

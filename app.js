@@ -6,6 +6,8 @@ export const CONNECTOR_COLORS = [0xffc928, 0xff7a2f];
 export const STICK_COLOR = 0x0736c9;
 export const STICK_HIT_RADIUS = 0.13;
 export const PREVIEW_STICK_HIT_RADIUS = 0.12;
+export const LOCAL_STORAGE_KEY = 'tiny-fort-generator-state-v1';
+export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front'];
 
 const DEG = Math.PI / 180;
 
@@ -361,6 +363,50 @@ export function deserializeDesign(json) {
   return design;
 }
 
+export function createStoredState(design, {
+  selected = [],
+  mode = 'add',
+  height = '0',
+  inventory = {},
+  cameraView = 'perspective'
+} = {}) {
+  return {
+    version: 1,
+    design: JSON.parse(serializeDesign(design)),
+    selected: selected.map(Number).filter((id) => Number.isFinite(id)),
+    mode,
+    height: String(height ?? '0'),
+    inventory: {
+      balls: Number(inventory.balls ?? 0),
+      sticks: Number(inventory.sticks ?? 0)
+    },
+    cameraView: CAMERA_VIEW_IDS.includes(cameraView) ? cameraView : 'perspective'
+  };
+}
+
+export function restoreStoredState(value) {
+  try {
+    if (!value) return { ok: false, reason: 'No saved browser state.' };
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    const design = deserializeDesign(parsed.design || parsed);
+    const nodeIds = new Set(design.nodes.map((node) => node.id));
+    return {
+      ok: true,
+      design,
+      selected: (parsed.selected || []).map(Number).filter((id) => nodeIds.has(id)),
+      mode: ['add', 'connect', 'delete', 'move', 'select'].includes(parsed.mode) ? parsed.mode : 'add',
+      height: String(parsed.height ?? '0'),
+      inventory: {
+        balls: Number(parsed.inventory?.balls ?? 0),
+        sticks: Number(parsed.inventory?.sticks ?? 0)
+      },
+      cameraView: CAMERA_VIEW_IDS.includes(parsed.cameraView) ? parsed.cameraView : 'perspective'
+    };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+}
+
 function addEdge(design, a, b) {
   addStick(design, a.id, b.id, { strict: true });
 }
@@ -437,6 +483,7 @@ async function setupBrowserApp() {
   let meshes = new Map();
   let stickMeshes = new Map();
   let previewMeshes = [];
+  let cameraView = 'perspective';
   const undoHistory = createUndoHistory();
   const redoHistory = createUndoHistory();
 
@@ -448,8 +495,11 @@ async function setupBrowserApp() {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x08111f, 14, 32);
 
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-  camera.position.set(5, 4, 6);
+  const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  const orthographicCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
+  let camera = perspectiveCamera;
+  perspectiveCamera.position.set(5, 4, 6);
+  orthographicCamera.position.set(1, 12, 1);
 
   const controls = new OrbitControls(camera, canvas);
   controls.target.set(1, 0.8, 1);
@@ -551,6 +601,73 @@ async function setupBrowserApp() {
   }
   function nodeById(id) { return design.nodes.find((node) => node.id === id); }
   function nodeAt(position) { return design.nodes.find((node) => keyForPosition(node.position) === keyForPosition(position)); }
+
+  function currentInventory() {
+    return {
+      balls: Number(document.querySelector('#owned-balls')?.value || 0),
+      sticks: Number(document.querySelector('#owned-sticks')?.value || 0)
+    };
+  }
+
+  function saveState() {
+    try {
+      window.localStorage?.setItem(LOCAL_STORAGE_KEY, JSON.stringify(createStoredState(design, {
+        selected,
+        mode,
+        height: document.querySelector('#height')?.value || '0',
+        inventory: currentInventory(),
+        cameraView
+      })));
+    } catch {
+      // Local storage may be unavailable in private mode or sandboxed browsers.
+    }
+  }
+
+  function updateCameraProjection() {
+    const rect = canvas.getBoundingClientRect();
+    const aspect = rect.width && rect.height ? rect.width / rect.height : 1;
+    perspectiveCamera.aspect = aspect;
+    perspectiveCamera.updateProjectionMatrix();
+    const size = 10;
+    orthographicCamera.left = -(size * aspect) / 2;
+    orthographicCamera.right = (size * aspect) / 2;
+    orthographicCamera.top = size / 2;
+    orthographicCamera.bottom = -size / 2;
+    orthographicCamera.updateProjectionMatrix();
+  }
+
+  function setCameraView(nextView, { persist = true } = {}) {
+    cameraView = CAMERA_VIEW_IDS.includes(nextView) ? nextView : 'perspective';
+    camera = cameraView === 'perspective' ? perspectiveCamera : orthographicCamera;
+    controls.object = camera;
+    const cameraSelect = document.querySelector('#camera-view');
+    if (cameraSelect) cameraSelect.value = cameraView;
+    const target = controls.target;
+    camera.up.set(0, 1, 0);
+    if (cameraView === 'perspective') {
+      camera.position.set(5, 4, 6);
+    } else if (cameraView === 'top') {
+      camera.up.set(0, 0, -1);
+      camera.position.set(target.x, target.y + 12, target.z);
+    } else if (cameraView === 'side') {
+      camera.position.set(target.x + 12, target.y, target.z);
+    } else if (cameraView === 'front') {
+      camera.position.set(target.x, target.y, target.z + 12);
+    }
+    updateCameraProjection();
+    camera.lookAt(target);
+    controls.update();
+    if (persist) saveState();
+  }
+
+  function applyStoredUi(state) {
+    document.querySelector('#height').value = state.height;
+    document.querySelector('#height-label').textContent = state.height;
+    document.querySelector('#owned-balls').value = state.inventory.balls;
+    document.querySelector('#owned-sticks').value = state.inventory.sticks;
+    mode = state.mode;
+    cameraView = state.cameraView;
+  }
 
   function cylinderBetween(a, b, material, radius = 0.035) {
     const start = new THREE.Vector3(a.x, a.y, a.z);
@@ -664,6 +781,7 @@ async function setupBrowserApp() {
     }
     buildConnectionPreviews();
     updatePanel();
+    saveState();
   }
 
   function updatePanel() {
@@ -827,24 +945,30 @@ async function setupBrowserApp() {
     }
   });
 
+  const modeHelp = {
+    select: 'Select mode: click balls to multi-select. Shift-click also toggles selection in other modes.',
+    add: 'Add mode: click the grid to place connector balls. Use height for upper levels.',
+    connect: 'Connect mode: click a ball, then click a semitransparent preview rod/end. Yellow endpoint creates a new ball.',
+    move: 'Move mode: select one or more balls, then click the grid to move them together.',
+    delete: 'Delete mode: click a ball or stick to remove it.'
+  };
+
+  function updateModeControls() {
+    document.querySelectorAll('.tool').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
+    document.querySelector('#mode-help').textContent = modeHelp[mode];
+  }
+
   function setMode(nextMode) {
     mode = nextMode;
     if (mode === 'add' || mode === 'delete') selected = [];
-    document.querySelectorAll('.tool').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
-    const help = {
-      select: 'Select mode: click balls to multi-select. Shift-click also toggles selection in other modes.',
-      add: 'Add mode: click the grid to place connector balls. Use height for upper levels.',
-      connect: 'Connect mode: click a ball, then click a semitransparent preview rod/end. Yellow endpoint creates a new ball.',
-      move: 'Move mode: select one or more balls, then click the grid to move them together.',
-      delete: 'Delete mode: click a ball or stick to remove it.'
-    };
-    document.querySelector('#mode-help').textContent = help[mode];
+    updateModeControls();
     refreshScene();
   }
 
   document.querySelectorAll('.tool').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.mode)));
   document.querySelector('#height').addEventListener('input', (event) => {
     document.querySelector('#height-label').textContent = event.target.value;
+    saveState();
   });
   document.querySelector('#stick-length').addEventListener('input', (event) => {
     const previous = ROD_LENGTH;
@@ -897,29 +1021,43 @@ async function setupBrowserApp() {
     refreshScene();
   }));
 
-  document.querySelector('#copy-link').addEventListener('click', async () => {
+  async function copyDesignLink() {
     const url = new URL(window.location.href);
     url.searchParams.set('design', encodeForUrl(design));
     await navigator.clipboard.writeText(url.toString());
     setMessage('Design link copied.');
-  });
+  }
 
-  document.querySelector('#download-json').addEventListener('click', () => {
+  function downloadDesignJson() {
     const blob = new Blob([serializeDesign(design)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'fort-kit-design.json';
     link.click();
     URL.revokeObjectURL(link.href);
+    setMessage('JSON design downloaded.');
+  }
+
+  document.querySelector('#json-menu').addEventListener('change', async (event) => {
+    const action = event.target.value;
+    event.target.value = '';
+    if (action === 'copy') await copyDesignLink();
+    else if (action === 'download') downloadDesignJson();
+    else if (action === 'load') document.querySelector('#file-input').click();
   });
 
-  document.querySelector('#load-json').addEventListener('click', () => document.querySelector('#file-input').click());
+  document.querySelector('#camera-view').addEventListener('change', (event) => {
+    setCameraView(event.target.value);
+    setMessage(`Camera changed to ${event.target.selectedOptions[0].textContent}.`);
+  });
+
   document.querySelector('#file-input').addEventListener('change', async (event) => {
     const file = event.target.files[0];
     if (!file) return;
     rememberUndo();
     design = deserializeDesign(await file.text());
     selected = [];
+    event.target.value = '';
     setMessage('JSON design loaded.');
     refreshScene();
   });
@@ -938,29 +1076,39 @@ async function setupBrowserApp() {
   });
 
   document.querySelector('#fit-view').addEventListener('click', () => {
-    camera.position.set(5, 4, 6);
-    controls.target.set(1, 0.8, 1);
-    controls.update();
+    setCameraView(cameraView);
   });
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
     renderer.setSize(rect.width, rect.height, false);
-    camera.aspect = rect.width / rect.height;
-    camera.updateProjectionMatrix();
+    updateCameraProjection();
   }
   window.addEventListener('resize', resize);
 
   try {
     const params = new URLSearchParams(window.location.search);
-    if (params.has('design')) design = decodeFromUrl(params.get('design'));
-    else addCubeBay(design, { x: 0, y: 0, z: 0 });
+    if (params.has('design')) {
+      design = decodeFromUrl(params.get('design'));
+    } else {
+      const stored = restoreStoredState(window.localStorage?.getItem(LOCAL_STORAGE_KEY));
+      if (stored.ok) {
+        design = stored.design;
+        selected = stored.selected;
+        applyStoredUi(stored);
+        setMessage('Restored saved browser design.');
+      } else {
+        addCubeBay(design, { x: 0, y: 0, z: 0 });
+      }
+    }
   } catch (error) {
-    setMessage(`Could not load shared design: ${error.message}`);
+    setMessage(`Could not load saved design: ${error.message}`);
     addCubeBay(design, { x: 0, y: 0, z: 0 });
   }
 
   resize();
+  updateModeControls();
+  setCameraView(cameraView, { persist: false });
   refreshScene();
   renderer.setAnimationLoop(() => {
     controls.update();

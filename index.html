@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="A realtime 3D ball-and-stick fort planner for estimating connector balls and rods before building." />
     <title>3D Fort Kit Planner</title>
-    <link rel="stylesheet" href="styles.css?v=mobile-tools" />
+    <link rel="stylesheet" href="styles.css?v=topbar-dropdowns" />
     <script type="importmap">
       {
         "imports": {
@@ -96,21 +96,32 @@
 
         <section class="panel" aria-labelledby="save-title">
           <h2 id="save-title">Save / share</h2>
-          <div class="template-grid">
-            <button id="copy-link">Copy design link</button>
-            <button id="download-json">Download JSON</button>
-            <button id="load-json">Load JSON</button>
-            <input id="file-input" type="file" accept="application/json" hidden />
-          </div>
           <textarea id="parts-list" readonly aria-label="Parts list"></textarea>
         </section>
       </aside>
 
       <main class="viewport">
         <div class="topbar">
-          <div>
-            <strong id="selection-label">No selection</strong>
-            <span id="message">Orbit: drag background • Zoom: wheel • Pan: right drag</span>
+          <div class="topbar-left">
+            <div class="topbar-menus" aria-label="File and camera controls">
+              <select id="json-menu" aria-label="JSON import and export">
+                <option value="" selected>JSON</option>
+                <option value="copy">Copy design link</option>
+                <option value="download">Download JSON</option>
+                <option value="load">Load JSON</option>
+              </select>
+              <select id="camera-view" aria-label="Camera view">
+                <option value="perspective" selected>Perspective</option>
+                <option value="top">Top orthographic</option>
+                <option value="side">Side orthographic</option>
+                <option value="front">Front orthographic</option>
+              </select>
+              <input id="file-input" type="file" accept="application/json" hidden />
+            </div>
+            <div>
+              <strong id="selection-label">No selection</strong>
+              <span id="message">Orbit: drag background • Zoom: wheel • Pan: right drag</span>
+            </div>
           </div>
           <div class="topbar-actions">
             <button id="undo" type="button" disabled title="Undo last edit (Ctrl+Z)">Undo</button>
@@ -122,6 +133,6 @@
       </main>
     </div>
 
-    <script type="module" src="app.js?v=redo-hit-targets"></script>
+    <script type="module" src="app.js?v=topbar-dropdowns"></script>
   </body>
 </html>

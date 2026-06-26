@@ -25,7 +25,10 @@ import {
   restoreUndoSnapshot,
   scaleDesignToRodLength,
   serializeDesign,
-  setRodLength
+  setRodLength,
+  createStoredState,
+  restoreStoredState,
+  LOCAL_STORAGE_KEY
 } from '../app.js';
 
 test.beforeEach(() => {
@@ -243,7 +246,7 @@ test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /styles\.css\?v=mobile-tools/);
+  assert.match(html, /styles\.css\?v=topbar-dropdowns/);
   assert.match(html, /class="panel build-panel"/);
   assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
   assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
@@ -257,7 +260,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=redo-hit-targets/);
+  assert.match(html, /app\.js\?v=topbar-dropdowns/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
   assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
@@ -266,6 +269,55 @@ test('browser import map and controls exist', () => {
   assert.match(app, /ConvexGeometry/);
   assert.match(app, /createConnectorGeometry/);
   assert.match(app, /face-diagonal sockets/);
+});
+
+test('top-left dropdowns expose JSON actions and camera choices', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.ok(html.indexOf('class="topbar-menus"') < html.indexOf('id="selection-label"'));
+  assert.match(html, /<select id="json-menu"[^>]*aria-label="JSON import and export"/);
+  assert.match(html, /<option value="download">Download JSON<\/option>/);
+  assert.match(html, /<option value="load">Load JSON<\/option>/);
+  assert.match(html, /id="file-input" type="file" accept="application\/json" hidden/);
+  assert.match(html, /<select id="camera-view"[^>]*aria-label="Camera view"/);
+  assert.match(html, /<option value="perspective" selected>Perspective<\/option>/);
+  assert.match(html, /<option value="top">Top orthographic<\/option>/);
+  assert.match(html, /<option value="side">Side orthographic<\/option>/);
+  assert.match(html, /<option value="front">Front orthographic<\/option>/);
+  assert.ok(html.indexOf('id="json-menu"') < html.indexOf('id="camera-view"'));
+  assert.match(app, /document\.querySelector\('#json-menu'\)\.addEventListener\('change'/);
+  assert.match(app, /document\.querySelector\('#camera-view'\)\.addEventListener\('change'/);
+  assert.match(app, /new THREE\.OrthographicCamera/);
+});
+
+test('browser state snapshots include design, UI, and selected camera state for local storage', () => {
+  const design = createEmptyDesign();
+  const first = addNode(design, { x: 0, y: 0, z: 0 });
+  const second = addNode(design, { x: 1, y: 0, z: 0 });
+  addStick(design, first.id, second.id, { strict: true });
+
+  const snapshot = createStoredState(design, {
+    selected: [second.id],
+    mode: 'connect',
+    height: '1.5',
+    inventory: { balls: 12, sticks: 20 },
+    cameraView: 'top'
+  });
+  assert.equal(LOCAL_STORAGE_KEY, 'tiny-fort-generator-state-v1');
+  assert.deepEqual(snapshot.selected, [second.id]);
+  assert.equal(snapshot.mode, 'connect');
+  assert.equal(snapshot.height, '1.5');
+  assert.deepEqual(snapshot.inventory, { balls: 12, sticks: 20 });
+  assert.equal(snapshot.cameraView, 'top');
+
+  const restored = restoreStoredState(JSON.stringify(snapshot));
+  assert.equal(restored.ok, true);
+  assert.equal(restored.design.nodes.length, 2);
+  assert.equal(restored.design.sticks.length, 1);
+  assert.deepEqual(restored.selected, [second.id]);
+  assert.equal(restored.mode, 'connect');
+  assert.equal(restored.height, '1.5');
+  assert.equal(restored.cameraView, 'top');
 });
 
 test('stick and connect preview rods have larger invisible hit targets for easier selection', () => {
@@ -284,5 +336,6 @@ test('mobile layout keeps the 3D scene visible and collapses controls to tool bu
   assert.match(css, /\.sidebar > :not\(\.build-panel\) \{ display: none; \}/);
   assert.match(css, /\.build-panel > :not\(\.tools\) \{ display: none; \}/);
   assert.match(css, /#fit-view \{ display: none; \}/);
-  assert.match(css, /\.topbar > div:first-child \{ display: none; \}/);
+  assert.match(css, /\.topbar-left > div:not\(\.topbar-menus\) \{ display: none; \}/);
+  assert.match(css, /\.topbar-menus select/);
 });
