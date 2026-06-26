@@ -279,7 +279,7 @@ test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /styles\.css\?v=extrude-all-views/);
+  assert.match(html, /styles\.css\?v=extrude-clear-camera/);
   assert.match(html, /class="panel build-panel"/);
   assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
   assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
@@ -294,7 +294,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=extrude-all-views/);
+  assert.match(html, /app\.js\?v=extrude-clear-camera/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
   assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
