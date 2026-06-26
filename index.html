@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="A realtime 3D ball-and-stick fort planner for estimating connector balls and rods before building." />
     <title>3D Fort Kit Planner</title>
-    <link rel="stylesheet" href="styles.css?v=topbar-dropdowns" />
+    <link rel="stylesheet" href="styles.css?v=extrude-all-views" />
     <script type="importmap">
       {
         "imports": {
@@ -52,8 +52,7 @@
             <button class="tool active" data-mode="add">Add ball</button>
             <button class="tool" data-mode="connect">Connect</button>
             <button class="tool danger" data-mode="delete">Delete</button>
-            <button class="tool" data-mode="move">Move</button>
-            <button class="tool" data-mode="select">Select</button>
+            <button class="tool" data-mode="extrude">Extrude</button>
           </div>
           <button id="connect-selected" type="button" class="wide-action">Connect selected valid pairs</button>
 
@@ -79,7 +78,7 @@
             Add mode: click the grid to place connector balls. Use height for upper levels.
           </p>
           <p class="help">
-            Connect mode is WYSIWYG: click a ball, then click a semitransparent preview rod/end. Shift-click or Select mode for multi-selection.
+            Connect mode is WYSIWYG: click a ball, then click a semitransparent preview rod/end. Shift-click in any mode for multi-selection. Extrude: select balls, then press Extrude again to copy one layer above.
           </p>
         </section>
 
@@ -115,6 +114,7 @@
                 <option value="top">Top orthographic</option>
                 <option value="side">Side orthographic</option>
                 <option value="front">Front orthographic</option>
+                <option value="all">All views</option>
               </select>
               <input id="file-input" type="file" accept="application/json" hidden />
             </div>
@@ -133,6 +133,6 @@
       </main>
     </div>
 
-    <script type="module" src="app.js?v=topbar-dropdowns"></script>
+    <script type="module" src="app.js?v=extrude-all-views"></script>
   </body>
 </html>

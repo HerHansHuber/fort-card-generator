@@ -7,7 +7,7 @@ export const STICK_COLOR = 0x0736c9;
 export const STICK_HIT_RADIUS = 0.13;
 export const PREVIEW_STICK_HIT_RADIUS = 0.12;
 export const LOCAL_STORAGE_KEY = 'tiny-fort-generator-state-v1';
-export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front'];
+export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front', 'all'];
 
 const DEG = Math.PI / 180;
 
@@ -299,6 +299,59 @@ export function connectSelectedPairs(design, nodeIds, { strict = true } = {}) {
   return { added, messages };
 }
 
+export function extrudeSelectedLayerUp(design, nodeIds, { strict = true } = {}) {
+  const uniqueIds = [...new Set(nodeIds.map(Number))];
+  const selectedNodes = uniqueIds.map((id) => design.nodes.find((node) => node.id === id)).filter(Boolean);
+  if (!selectedNodes.length) return { ok: false, reason: 'Select one or more balls to extrude.' };
+
+  const targets = selectedNodes.map((node) => ({
+    source: node,
+    position: normalizePosition({
+      x: node.position.x,
+      y: node.position.y + ROD_LENGTH,
+      z: node.position.z
+    })
+  }));
+  for (const target of targets) {
+    if (design.nodes.some((node) => keyForPosition(node.position) === keyForPosition(target.position))) {
+      return { ok: false, reason: `Cannot extrude: the layer above ball ${target.source.id} already has a ball.` };
+    }
+  }
+
+  const sourceIds = new Set(selectedNodes.map((node) => node.id));
+  const copyBySourceId = new Map();
+  const createdNodes = [];
+  const messages = [];
+  for (const target of targets) {
+    const copy = addNode(design, target.position);
+    copy.color = target.source.color;
+    copyBySourceId.set(target.source.id, copy);
+    createdNodes.push(copy);
+  }
+
+  let verticalSticks = 0;
+  for (const source of selectedNodes) {
+    const copy = copyBySourceId.get(source.id);
+    const result = addStick(design, source.id, copy.id, { strict });
+    if (result.ok) verticalSticks += 1;
+    else messages.push(result.reason);
+  }
+
+  let copiedSticks = 0;
+  const originalSticks = [...design.sticks].filter((stick) => sourceIds.has(stick.a) && sourceIds.has(stick.b));
+  for (const stick of originalSticks) {
+    const a = copyBySourceId.get(stick.a);
+    const b = copyBySourceId.get(stick.b);
+    if (!a || !b) continue;
+    const result = addStick(design, a.id, b.id, { strict });
+    if (result.ok) copiedSticks += 1;
+    else messages.push(result.reason);
+  }
+
+  calculateParts(design);
+  return { ok: true, createdNodes, copiedSticks, verticalSticks, messages };
+}
+
 export function calculateParts(design, inventory = {}) {
   for (const stick of design.sticks) {
     const a = design.nodes.find((node) => node.id === stick.a);
@@ -394,7 +447,7 @@ export function restoreStoredState(value) {
       ok: true,
       design,
       selected: (parsed.selected || []).map(Number).filter((id) => nodeIds.has(id)),
-      mode: ['add', 'connect', 'delete', 'move', 'select'].includes(parsed.mode) ? parsed.mode : 'add',
+      mode: ['add', 'connect', 'delete', 'extrude'].includes(parsed.mode) ? parsed.mode : 'add',
       height: String(parsed.height ?? '0'),
       inventory: {
         balls: Number(parsed.inventory?.balls ?? 0),
@@ -468,6 +521,12 @@ function encodeForUrl(design) {
   return btoa(unescape(encodeURIComponent(serializeDesign(design))));
 }
 
+export function makeDesignLink(href, design) {
+  const url = new URL(href);
+  url.searchParams.set('design', encodeForUrl(design));
+  return url.toString();
+}
+
 function decodeFromUrl(value) {
   return deserializeDesign(decodeURIComponent(escape(atob(value))));
 }
@@ -496,10 +555,14 @@ async function setupBrowserApp() {
   scene.fog = new THREE.Fog(0x08111f, 14, 32);
 
   const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-  const orthographicCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
+  const viewCameras = {
+    perspective: perspectiveCamera,
+    top: new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100),
+    side: new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100),
+    front: new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100)
+  };
   let camera = perspectiveCamera;
   perspectiveCamera.position.set(5, 4, 6);
-  orthographicCamera.position.set(1, 12, 1);
 
   const controls = new OrbitControls(camera, canvas);
   controls.target.set(1, 0.8, 1);
@@ -629,33 +692,42 @@ async function setupBrowserApp() {
     perspectiveCamera.aspect = aspect;
     perspectiveCamera.updateProjectionMatrix();
     const size = 10;
-    orthographicCamera.left = -(size * aspect) / 2;
-    orthographicCamera.right = (size * aspect) / 2;
-    orthographicCamera.top = size / 2;
-    orthographicCamera.bottom = -size / 2;
-    orthographicCamera.updateProjectionMatrix();
+    for (const orthoCamera of [viewCameras.top, viewCameras.side, viewCameras.front]) {
+      orthoCamera.left = -(size * aspect) / 2;
+      orthoCamera.right = (size * aspect) / 2;
+      orthoCamera.top = size / 2;
+      orthoCamera.bottom = -size / 2;
+      orthoCamera.updateProjectionMatrix();
+    }
+  }
+
+  function frameCamera(view, target = controls.target) {
+    const nextCamera = viewCameras[view] || perspectiveCamera;
+    nextCamera.up.set(0, 1, 0);
+    if (view === 'perspective') {
+      nextCamera.position.set(5, 4, 6);
+    } else if (view === 'top') {
+      nextCamera.up.set(0, 0, -1);
+      nextCamera.position.set(target.x, target.y + 12, target.z);
+    } else if (view === 'side') {
+      nextCamera.position.set(target.x + 12, target.y, target.z);
+    } else if (view === 'front') {
+      nextCamera.position.set(target.x, target.y, target.z + 12);
+    }
+    nextCamera.lookAt(target);
+    nextCamera.updateProjectionMatrix();
+    return nextCamera;
   }
 
   function setCameraView(nextView, { persist = true } = {}) {
     cameraView = CAMERA_VIEW_IDS.includes(nextView) ? nextView : 'perspective';
-    camera = cameraView === 'perspective' ? perspectiveCamera : orthographicCamera;
+    camera = cameraView === 'all' ? perspectiveCamera : (viewCameras[cameraView] || perspectiveCamera);
     controls.object = camera;
     const cameraSelect = document.querySelector('#camera-view');
     if (cameraSelect) cameraSelect.value = cameraView;
-    const target = controls.target;
-    camera.up.set(0, 1, 0);
-    if (cameraView === 'perspective') {
-      camera.position.set(5, 4, 6);
-    } else if (cameraView === 'top') {
-      camera.up.set(0, 0, -1);
-      camera.position.set(target.x, target.y + 12, target.z);
-    } else if (cameraView === 'side') {
-      camera.position.set(target.x + 12, target.y, target.z);
-    } else if (cameraView === 'front') {
-      camera.position.set(target.x, target.y, target.z + 12);
-    }
     updateCameraProjection();
-    camera.lookAt(target);
+    for (const view of ['perspective', 'top', 'side', 'front']) frameCamera(view);
+    controls.enabled = cameraView !== 'all';
     controls.update();
     if (persist) saveState();
   }
@@ -819,21 +891,42 @@ async function setupBrowserApp() {
       `Current stick length: ${ROD_LENGTH.toFixed(2)} planner units`,
       '',
       '18-hole model: 6 straight sockets + 12 face-diagonal sockets on a rhombicuboctahedron-like connector.',
-      'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.'
+      'Connect mode: click a ball, then click a semitransparent preview rod/end to add it. Yellow endpoints create a new ball.',
+      'Extrude mode: click balls to select them, then press Extrude again to copy them one layer above.'
     ].join('\n');
     document.querySelector('#selection-label').textContent = selected.length ? `Selected ${selected.length}: ${selected.join(', ')}` : 'No selection';
     updateHistoryButtons();
   }
 
-  function pointerToNdc(event) {
+  function getPointerCamera(event) {
     const rect = canvas.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    let left = rect.left;
+    let top = rect.top;
+    let width = rect.width;
+    let height = rect.height;
+    let pointerCamera = camera;
+    if (cameraView === 'all') {
+      const localX = event.clientX - rect.left;
+      const localY = event.clientY - rect.top;
+      const halfWidth = rect.width / 2;
+      const halfHeight = rect.height / 2;
+      const right = localX >= halfWidth;
+      const bottom = localY >= halfHeight;
+      const view = !right && !bottom ? 'perspective' : right && !bottom ? 'top' : !right && bottom ? 'side' : 'front';
+      pointerCamera = viewCameras[view];
+      left = rect.left + (right ? halfWidth : 0);
+      top = rect.top + (bottom ? halfHeight : 0);
+      width = halfWidth;
+      height = halfHeight;
+    }
+    pointer.x = ((event.clientX - left) / width) * 2 - 1;
+    pointer.y = -((event.clientY - top) / height) * 2 + 1;
+    return pointerCamera;
   }
 
   function getGridPoint(event) {
-    pointerToNdc(event);
-    raycaster.setFromCamera(pointer, camera);
+    const pointerCamera = getPointerCamera(event);
+    raycaster.setFromCamera(pointer, pointerCamera);
     const hit = raycaster.intersectObject(floor)[0];
     if (!hit) return null;
     const y = Number(document.querySelector('#height').value) * ROD_LENGTH;
@@ -851,8 +944,8 @@ async function setupBrowserApp() {
   }
 
   function getHitObject(event) {
-    pointerToNdc(event);
-    raycaster.setFromCamera(pointer, camera);
+    const pointerCamera = getPointerCamera(event);
+    raycaster.setFromCamera(pointer, pointerCamera);
     const objects = [...meshes.values(), ...stickMeshes.values(), ...previewMeshes];
     return findInteractive(raycaster.intersectObjects(objects, true)[0]?.object || null);
   }
@@ -862,18 +955,30 @@ async function setupBrowserApp() {
   }
 
   function selectNode(id, event = {}) {
-    if (event.shiftKey || mode === 'select') {
+    if (event.shiftKey || mode === 'extrude') {
       toggleSelection(id);
+      if (mode === 'extrude') setMessage(selected.length ? 'Select more balls, or press Extrude again to copy the selection one layer above.' : 'Click balls to select a layer for extrusion.');
     } else if (mode === 'connect') {
       selected = [id];
       setMessage(`Ball ${id} selected. Click a semitransparent preview rod/end to add a connection.`);
-    } else if (mode === 'move') {
-      if (!selected.includes(id)) selected = [id];
-      else if (event.shiftKey) toggleSelection(id);
-      setMessage(selected.length > 1 ? 'Click the grid to move the whole selection using the first selected ball as anchor.' : 'Click the grid to move this ball. Shift-click more balls for multi-move.');
     } else {
       selected = [id];
     }
+    refreshScene();
+  }
+
+  function extrudeSelection() {
+    const historyLength = undoHistory.length;
+    rememberUndo();
+    const result = extrudeSelectedLayerUp(design, selected, { strict: true });
+    if (!result.ok) {
+      undoHistory.splice(historyLength);
+      setMessage(result.reason);
+      updateHistoryButtons();
+      return;
+    }
+    selected = result.createdNodes.map((node) => node.id);
+    setMessage(`Extruded ${result.createdNodes.length} ball${result.createdNodes.length === 1 ? '' : 's'} one layer above.`);
     refreshScene();
   }
 
@@ -930,27 +1035,14 @@ async function setupBrowserApp() {
       selected = [node.id];
       setMessage(`Ball ${node.id} placed at ${point.x}, ${point.y}, ${point.z}.`);
       refreshScene();
-    } else if (mode === 'move' && selected.length) {
-      const anchor = nodeById(selected[0]);
-      const delta = { x: point.x - anchor.position.x, y: point.y - anchor.position.y, z: point.z - anchor.position.z };
-      const historyLength = undoHistory.length;
-      rememberUndo();
-      const result = moveNodesByDelta(design, selected, delta);
-      if (!result.ok) undoHistory.splice(historyLength);
-      setMessage(result.ok ? `Moved ${result.moved} selected ball${result.moved === 1 ? '' : 's'}.` : result.reason);
-      refreshScene();
-    } else if (mode === 'select' && !event.shiftKey) {
-      selected = [];
-      refreshScene();
     }
   });
 
   const modeHelp = {
-    select: 'Select mode: click balls to multi-select. Shift-click also toggles selection in other modes.',
     add: 'Add mode: click the grid to place connector balls. Use height for upper levels.',
     connect: 'Connect mode: click a ball, then click a semitransparent preview rod/end. Yellow endpoint creates a new ball.',
-    move: 'Move mode: select one or more balls, then click the grid to move them together.',
-    delete: 'Delete mode: click a ball or stick to remove it.'
+    delete: 'Delete mode: click a ball or stick to remove it.',
+    extrude: 'Extrude mode: click balls to multi-select a layer, then press Extrude again to copy it one stick length above.'
   };
 
   function updateModeControls() {
@@ -965,7 +1057,10 @@ async function setupBrowserApp() {
     refreshScene();
   }
 
-  document.querySelectorAll('.tool').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.mode)));
+  document.querySelectorAll('.tool').forEach((button) => button.addEventListener('click', () => {
+    if (button.dataset.mode === 'extrude' && mode === 'extrude' && selected.length) extrudeSelection();
+    else setMode(button.dataset.mode);
+  }));
   document.querySelector('#height').addEventListener('input', (event) => {
     document.querySelector('#height-label').textContent = event.target.value;
     saveState();
@@ -1021,11 +1116,28 @@ async function setupBrowserApp() {
     refreshScene();
   }));
 
+  async function copyToClipboardWithFallback(text) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return copied;
+    }
+  }
+
   async function copyDesignLink() {
-    const url = new URL(window.location.href);
-    url.searchParams.set('design', encodeForUrl(design));
-    await navigator.clipboard.writeText(url.toString());
-    setMessage('Design link copied.');
+    const copied = await copyToClipboardWithFallback(makeDesignLink(window.location.href, design));
+    setMessage(copied ? 'Design link copied.' : 'Could not copy automatically. Use Download JSON instead.');
   }
 
   function downloadDesignJson() {
@@ -1086,6 +1198,32 @@ async function setupBrowserApp() {
   }
   window.addEventListener('resize', resize);
 
+  function renderViewport(view, x, y, width, height) {
+    renderer.setViewport(x, y, width, height);
+    renderer.setScissor(x, y, width, height);
+    renderer.render(scene, frameCamera(view));
+  }
+
+  function renderAllViews() {
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const halfWidth = Math.floor(width / 2);
+    const halfHeight = Math.floor(height / 2);
+    renderer.setScissorTest(true);
+    renderViewport('perspective', 0, halfHeight, halfWidth, height - halfHeight);
+    renderViewport('top', halfWidth, halfHeight, width - halfWidth, height - halfHeight);
+    renderViewport('side', 0, 0, halfWidth, halfHeight);
+    renderViewport('front', halfWidth, 0, width - halfWidth, halfHeight);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, width, height);
+  }
+
+  function renderScene() {
+    if (cameraView === 'all') renderAllViews();
+    else renderer.render(scene, camera);
+  }
+
   try {
     const params = new URLSearchParams(window.location.search);
     if (params.has('design')) {
@@ -1112,7 +1250,7 @@ async function setupBrowserApp() {
   refreshScene();
   renderer.setAnimationLoop(() => {
     controls.update();
-    renderer.render(scene, camera);
+    renderScene();
   });
 }
 

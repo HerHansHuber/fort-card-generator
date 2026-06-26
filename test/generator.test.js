@@ -14,6 +14,7 @@ import {
   connectSelectedPairs,
   createEmptyDesign,
   createUndoHistory,
+  extrudeSelectedLayerUp,
   deserializeDesign,
   distance,
   getSocketUsage,
@@ -28,6 +29,8 @@ import {
   setRodLength,
   createStoredState,
   restoreStoredState,
+  makeDesignLink,
+  CAMERA_VIEW_IDS,
   LOCAL_STORAGE_KEY
 } from '../app.js';
 
@@ -165,6 +168,36 @@ test('connect selected pairs skips square diagonals because all sticks are same 
   assert.ok(result.messages.some((message) => message.includes('square diagonals cannot be connected')));
 });
 
+test('extrude copies a selected layer one rod above and connects matching balls', () => {
+  const design = createEmptyDesign();
+  const a = addNode(design, { x: 0, y: 0, z: 0 });
+  const b = addNode(design, { x: 1, y: 0, z: 0 });
+  assert.equal(addStick(design, a.id, b.id, { strict: true }).ok, true);
+
+  const result = extrudeSelectedLayerUp(design, [a.id, b.id]);
+  assert.equal(result.ok, true);
+  assert.equal(result.createdNodes.length, 2);
+  assert.equal(result.copiedSticks, 1);
+  assert.equal(result.verticalSticks, 2);
+  assert.equal(design.nodes.length, 4);
+  assert.equal(design.sticks.length, 4);
+  assert.deepEqual(result.createdNodes.map((node) => node.position), [
+    { x: 0, y: 1, z: 0 },
+    { x: 1, y: 1, z: 0 }
+  ]);
+  assert.equal(calculateParts(design).invalidSticks, 0);
+});
+
+test('extrude refuses to overwrite an occupied layer above', () => {
+  const design = createEmptyDesign();
+  const a = addNode(design, { x: 0, y: 0, z: 0 });
+  addNode(design, { x: 0, y: 1, z: 0 });
+  const result = extrudeSelectedLayerUp(design, [a.id]);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /already has a ball/);
+  assert.equal(design.nodes.length, 2);
+});
+
 test('pitched roof template uses only equal-length face-diagonal and straight rods', () => {
   const design = createEmptyDesign();
   addPitchedRoofBay(design, { x: 0, y: 1, z: 0 });
@@ -246,12 +279,13 @@ test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /styles\.css\?v=topbar-dropdowns/);
+  assert.match(html, /styles\.css\?v=extrude-all-views/);
   assert.match(html, /class="panel build-panel"/);
   assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
   assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
-  assert.ok(html.indexOf('data-mode="delete"') < html.indexOf('data-mode="move"'));
-  assert.ok(html.indexOf('data-mode="move"') < html.indexOf('data-mode="select"'));
+  assert.ok(html.indexOf('data-mode="delete"') < html.indexOf('data-mode="extrude"'));
+  assert.doesNotMatch(html, /data-mode="move"/);
+  assert.doesNotMatch(html, /data-mode="select"/);
   assert.match(html, /id="connect-selected"/);
   assert.match(html, /data-template="triangle"/);
   assert.match(html, /id="stick-length"/);
@@ -260,7 +294,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=topbar-dropdowns/);
+  assert.match(html, /app\.js\?v=extrude-all-views/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
   assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
@@ -284,10 +318,30 @@ test('top-left dropdowns expose JSON actions and camera choices', () => {
   assert.match(html, /<option value="top">Top orthographic<\/option>/);
   assert.match(html, /<option value="side">Side orthographic<\/option>/);
   assert.match(html, /<option value="front">Front orthographic<\/option>/);
+  assert.match(html, /<option value="all">All views<\/option>/);
+  assert.deepEqual(CAMERA_VIEW_IDS, ['perspective', 'top', 'side', 'front', 'all']);
   assert.ok(html.indexOf('id="json-menu"') < html.indexOf('id="camera-view"'));
   assert.match(app, /document\.querySelector\('#json-menu'\)\.addEventListener\('change'/);
   assert.match(app, /document\.querySelector\('#camera-view'\)\.addEventListener\('change'/);
   assert.match(app, /new THREE\.OrthographicCamera/);
+  assert.match(app, /renderAllViews/);
+  assert.match(app, /renderer\.setScissorTest\(true\)/);
+  assert.match(app, /getPointerCamera/);
+});
+
+test('copy design link creates a share URL and has a clipboard fallback path', () => {
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const design = createEmptyDesign();
+  addCubeBay(design);
+  const url = makeDesignLink('https://example.test/planner?old=1&design=stale', design);
+  const parsed = new URL(url);
+  assert.equal(parsed.origin, 'https://example.test');
+  assert.equal(parsed.pathname, '/planner');
+  assert.equal(parsed.searchParams.get('old'), '1');
+  assert.ok(parsed.searchParams.get('design').length > 100);
+  assert.match(app, /copyToClipboardWithFallback/);
+  assert.match(app, /navigator\.clipboard\?\.writeText/);
+  assert.match(app, /document\.execCommand\('copy'\)/);
 });
 
 test('browser state snapshots include design, UI, and selected camera state for local storage', () => {
@@ -301,14 +355,14 @@ test('browser state snapshots include design, UI, and selected camera state for 
     mode: 'connect',
     height: '1.5',
     inventory: { balls: 12, sticks: 20 },
-    cameraView: 'top'
+    cameraView: 'all'
   });
   assert.equal(LOCAL_STORAGE_KEY, 'tiny-fort-generator-state-v1');
   assert.deepEqual(snapshot.selected, [second.id]);
   assert.equal(snapshot.mode, 'connect');
   assert.equal(snapshot.height, '1.5');
   assert.deepEqual(snapshot.inventory, { balls: 12, sticks: 20 });
-  assert.equal(snapshot.cameraView, 'top');
+  assert.equal(snapshot.cameraView, 'all');
 
   const restored = restoreStoredState(JSON.stringify(snapshot));
   assert.equal(restored.ok, true);
@@ -317,7 +371,7 @@ test('browser state snapshots include design, UI, and selected camera state for 
   assert.deepEqual(restored.selected, [second.id]);
   assert.equal(restored.mode, 'connect');
   assert.equal(restored.height, '1.5');
-  assert.equal(restored.cameraView, 'top');
+  assert.equal(restored.cameraView, 'all');
 });
 
 test('stick and connect preview rods have larger invisible hit targets for easier selection', () => {
