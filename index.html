@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="A realtime 3D ball-and-stick fort planner for estimating connector balls and rods before building." />
-    <title>3D Fort Kit Planner</title>
-    <link rel="stylesheet" href="styles.css?v=iphone-json-import" />
+    <title>Fort Builder v2.1.0</title>
+    <link rel="stylesheet" href="styles.css?v=fort-builder-menu" />
     <script type="importmap">
       {
         "imports": {
@@ -22,7 +22,7 @@
           <span class="brand__mark">⚪</span>
           <div>
             <p class="eyebrow">Tiny Thinkers-style planner</p>
-            <h1>3D Fort Kit Planner</h1>
+            <h1>Fort Builder <span class="version-badge">v2.1.0</span></h1>
           </div>
         </div>
 
@@ -102,22 +102,39 @@
       <main class="viewport">
         <div class="topbar">
           <div class="topbar-left">
-            <div class="topbar-menus" aria-label="File and camera controls">
-              <details class="topbar-dropdown json-dropdown">
-                <summary aria-label="JSON import and export">JSON</summary>
-                <div class="topbar-dropdown__menu">
-                  <button id="copy-link" type="button">Copy design link</button>
-                  <button id="download-json" type="button">Download JSON</button>
-                  <label id="load-json" class="topbar-dropdown__item" for="file-input">Import JSON</label>
+            <div class="topbar-menus" aria-label="Main menu">
+              <details class="topbar-dropdown main-menu">
+                <summary aria-label="Open main menu">Main menu</summary>
+                <div class="topbar-dropdown__menu main-menu__menu">
+                  <section class="main-menu__section" aria-label="Project">
+                    <h3>Project</h3>
+                    <button id="new-project" type="button">New project</button>
+                    <button id="open-project" type="button">Open project…</button>
+                    <button id="save-project" type="button">Save project</button>
+                    <button id="copy-link" type="button">Copy design link</button>
+                  </section>
+                  <section class="main-menu__section" aria-label="View">
+                    <h3>View</h3>
+                    <label class="main-menu__label" for="camera-view">Camera view</label>
+                    <select id="camera-view" aria-label="Camera view">
+                      <option value="perspective" selected>Perspective</option>
+                      <option value="top">Top orthographic</option>
+                      <option value="side">Side orthographic</option>
+                      <option value="front">Front orthographic</option>
+                      <option value="clear">Clear all</option>
+                    </select>
+                  </section>
+                  <section class="main-menu__section" aria-label="Info">
+                    <h3>Info</h3>
+                    <output id="main-menu-info">Connectors: 0 • Sticks: 0 • Open sockets: 0</output>
+                  </section>
+                  <section class="main-menu__section" aria-label="Help and updates">
+                    <h3>Help & updates</h3>
+                    <button id="help-action" type="button">Help</button>
+                    <button id="update-action" type="button">Update</button>
+                  </section>
                 </div>
               </details>
-              <select id="camera-view" aria-label="Camera view">
-                <option value="perspective" selected>Perspective</option>
-                <option value="top">Top orthographic</option>
-                <option value="side">Side orthographic</option>
-                <option value="front">Front orthographic</option>
-                <option value="clear">Clear all</option>
-              </select>
               <input id="file-input" type="file" accept="application/json" hidden />
             </div>
             <div>
@@ -135,6 +152,6 @@
       </main>
     </div>
 
-    <script type="module" src="app.js?v=iphone-json-import"></script>
+    <script type="module" src="app.js?v=fort-builder-menu"></script>
   </body>
 </html>

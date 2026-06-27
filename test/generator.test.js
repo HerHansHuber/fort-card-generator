@@ -31,7 +31,14 @@ import {
   restoreStoredState,
   makeDesignLink,
   CAMERA_VIEW_IDS,
-  LOCAL_STORAGE_KEY
+  LOCAL_STORAGE_KEY,
+  APP_NAME,
+  APP_VERSION,
+  GRID_UNIT,
+  GRID_SIZE,
+  GRID_DIVISIONS,
+  FOG_NEAR,
+  FOG_FAR
 } from '../app.js';
 
 test.beforeEach(() => {
@@ -279,7 +286,7 @@ test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /styles\.css\?v=iphone-json-import/);
+  assert.match(html, /styles\.css\?v=fort-builder-menu/);
   assert.match(html, /class="panel build-panel"/);
   assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
   assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
@@ -294,7 +301,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=iphone-json-import/);
+  assert.match(html, /app\.js\?v=fort-builder-menu/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
   assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
@@ -305,20 +312,23 @@ test('browser import map and controls exist', () => {
   assert.match(app, /face-diagonal sockets/);
 });
 
-test('top-left dropdowns expose iPhone-safe JSON actions and camera choices', () => {
+test('top-left main menu exposes project actions and camera choices', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.ok(html.indexOf('class="topbar-menus"') < html.indexOf('id="selection-label"'));
-  assert.match(html, /<details class="topbar-dropdown json-dropdown"/);
-  assert.match(html, /<summary[^>]*>JSON<\/summary>/);
+  assert.match(html, /<details class="topbar-dropdown main-menu"/);
+  assert.match(html, /<summary[^>]*>Main menu<\/summary>/);
+  assert.match(html, /<button id="new-project"[^>]*>New project<\/button>/);
+  assert.match(html, /<button id="open-project"[^>]*>Open project…<\/button>/);
+  assert.match(html, /<button id="save-project"[^>]*>Save project<\/button>/);
   assert.match(html, /<button id="copy-link"[^>]*>Copy design link<\/button>/);
-  assert.match(html, /<button id="download-json"[^>]*>Download JSON<\/button>/);
-  assert.match(html, /<label id="load-json"[^>]*for="file-input"[^>]*>Import JSON<\/label>/);
   assert.match(html, /id="file-input" type="file" accept="application\/json" hidden/);
+  assert.doesNotMatch(html, /class="topbar-dropdown json-dropdown"/);
   assert.doesNotMatch(html, /<select id="json-menu"/);
   assert.doesNotMatch(app, /querySelector\('#json-menu'\)/);
   assert.match(app, /document\.querySelector\('#copy-link'\)\.addEventListener\('click'/);
-  assert.match(app, /document\.querySelector\('#download-json'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#save-project'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#open-project'\)\.addEventListener\('click'/);
   assert.match(html, /<select id="camera-view"[^>]*aria-label="Camera view"/);
   assert.match(html, /<option value="perspective" selected>Perspective<\/option>/);
   assert.match(html, /<option value="top">Top orthographic<\/option>/);
@@ -327,7 +337,7 @@ test('top-left dropdowns expose iPhone-safe JSON actions and camera choices', ()
   assert.match(html, /<option value="clear">Clear all<\/option>/);
   assert.doesNotMatch(html, /<option value="all">All views<\/option>/);
   assert.deepEqual(CAMERA_VIEW_IDS, ['perspective', 'top', 'side', 'front']);
-  assert.ok(html.indexOf('class="json-dropdown"') < html.indexOf('id="camera-view"'));
+  assert.ok(html.indexOf('id="new-project"') < html.indexOf('id="camera-view"'));
   assert.match(app, /document\.querySelector\('#camera-view'\)\.addEventListener\('change'/);
   assert.match(app, /action === 'clear'/);
   assert.match(app, /new THREE\.OrthographicCamera/);
@@ -396,5 +406,50 @@ test('mobile layout keeps the 3D scene visible and collapses controls to tool bu
   assert.match(css, /\.build-panel > :not\(\.tools\) \{ display: none; \}/);
   assert.match(css, /#fit-view \{ display: none; \}/);
   assert.match(css, /\.topbar-left > div:not\(\.topbar-menus\) \{ display: none; \}/);
-  assert.match(css, /\.topbar-menus select/);
+  assert.match(css, /\.main-menu/);
+});
+
+test('Fort Builder branding exposes an app version in HTML and JavaScript', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(APP_NAME, 'Fort Builder');
+  assert.match(APP_VERSION, /^\d+\.\d+\.\d+$/);
+  assert.equal(packageJson.version, APP_VERSION);
+  assert.match(html, /<title>Fort Builder v\d+\.\d+\.\d+<\/title>/);
+  assert.match(html, /<h1>Fort Builder <span class="version-badge">v\d+\.\d+\.\d+<\/span><\/h1>/);
+});
+
+test('scene grid groups four old half-unit cells into one rod-length unit and delays fog', () => {
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.equal(GRID_UNIT, 2);
+  assert.equal(GRID_DIVISIONS, GRID_SIZE / GRID_UNIT);
+  assert.equal(FOG_NEAR, 36);
+  assert.equal(FOG_FAR, 90);
+  assert.match(app, /new THREE\.GridHelper\(GRID_SIZE, GRID_DIVISIONS/);
+  assert.match(app, /scene\.fog = new THREE\.Fog\(0x08111f, FOG_NEAR, FOG_FAR\)/);
+  assert.match(app, /const snap = Math\.max\(0\.05, ROD_LENGTH\)/);
+});
+
+test('main menu contains file, project, view, info, help, and update actions', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(html, /<details class="topbar-dropdown main-menu"/);
+  assert.match(html, /<summary[^>]*>Main menu<\/summary>/);
+  assert.match(html, /<button id="new-project"[^>]*>New project<\/button>/);
+  assert.match(html, /<button id="open-project"[^>]*>Open project…<\/button>/);
+  assert.match(html, /<button id="save-project"[^>]*>Save project<\/button>/);
+  assert.match(html, /<button id="copy-link"[^>]*>Copy design link<\/button>/);
+  assert.match(html, /<select id="camera-view"[^>]*aria-label="Camera view"/);
+  assert.match(html, /id="main-menu-info"/);
+  assert.match(html, /<button id="help-action"[^>]*>Help<\/button>/);
+  assert.match(html, /<button id="update-action"[^>]*>Update<\/button>/);
+  assert.ok(html.indexOf('id="new-project"') < html.indexOf('id="camera-view"'));
+  assert.ok(html.indexOf('id="camera-view"') < html.indexOf('id="main-menu-info"'));
+  assert.doesNotMatch(html, /class="topbar-dropdown json-dropdown"/);
+  assert.match(app, /document\.querySelector\('#new-project'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#open-project'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#save-project'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#help-action'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#update-action'\)\.addEventListener\('click'/);
+  assert.match(app, /document\.querySelector\('#main-menu-info'\)\.textContent/);
 });

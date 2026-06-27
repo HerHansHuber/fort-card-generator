@@ -1,3 +1,5 @@
+export const APP_NAME = 'Fort Builder';
+export const APP_VERSION = '2.1.0';
 export let ROD_LENGTH = 2;
 export const ROD_TOLERANCE = 0.08;
 export const SOCKET_ANGLE_TOLERANCE_DEG = 8;
@@ -6,6 +8,13 @@ export const CONNECTOR_COLORS = [0xffc928, 0xff7a2f];
 export const STICK_COLOR = 0x0736c9;
 export const STICK_HIT_RADIUS = 0.13;
 export const PREVIEW_STICK_HIT_RADIUS = 0.12;
+export const BASE_GRID_UNIT = 0.5;
+export const GRID_UNIT_SCALE = 4;
+export const GRID_UNIT = BASE_GRID_UNIT * GRID_UNIT_SCALE;
+export const GRID_SIZE = 16;
+export const GRID_DIVISIONS = GRID_SIZE / GRID_UNIT;
+export const FOG_NEAR = 36;
+export const FOG_FAR = 90;
 export const LOCAL_STORAGE_KEY = 'tiny-fort-generator-state-v1';
 export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front'];
 
@@ -552,7 +561,7 @@ async function setupBrowserApp() {
   renderer.setClearColor(0x08111f, 1);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x08111f, 14, 32);
+  scene.fog = new THREE.Fog(0x08111f, FOG_NEAR, FOG_FAR);
 
   const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
   const viewCameras = {
@@ -577,11 +586,11 @@ async function setupBrowserApp() {
   sun.position.set(4, 8, 6);
   scene.add(sun);
 
-  const grid = new THREE.GridHelper(12, 24, 0x46627f, 0x1f344d);
+  const grid = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x5d7897, 0x20344d);
   grid.position.set(0, -0.01, 0);
   scene.add(grid);
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshBasicMaterial({ visible: false }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE), new THREE.MeshBasicMaterial({ visible: false }));
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
@@ -865,6 +874,7 @@ async function setupBrowserApp() {
     document.querySelector('#sticks-used').textContent = parts.sticks;
     document.querySelector('#open-ends').textContent = parts.openEnds;
     document.querySelector('#invalid-sticks').textContent = parts.invalidSticks;
+    document.querySelector('#main-menu-info').textContent = `Connectors: ${parts.balls} • Sticks: ${parts.sticks} • Open sockets: ${parts.openEnds} • Invalid: ${parts.invalidSticks}`;
     document.querySelector('#stick-length-label').textContent = ROD_LENGTH.toFixed(2);
     const stickLengthInput = document.querySelector('#stick-length');
     if (stickLengthInput && Math.abs(Number(stickLengthInput.value) - ROD_LENGTH) > 0.001) stickLengthInput.value = ROD_LENGTH.toFixed(2);
@@ -910,7 +920,7 @@ async function setupBrowserApp() {
     const hit = raycaster.intersectObject(floor)[0];
     if (!hit) return null;
     const y = Number(document.querySelector('#height').value) * ROD_LENGTH;
-    const snap = Math.max(0.05, ROD_LENGTH / 2);
+    const snap = Math.max(0.05, ROD_LENGTH);
     return { x: roundToGrid(hit.point.x, snap), y, z: roundToGrid(hit.point.z, snap) };
   }
 
@@ -1068,7 +1078,7 @@ async function setupBrowserApp() {
   function findOpenOrigin() {
     if (!design.nodes.length) return { x: 0, y: 0, z: 0 };
     const maxX = Math.max(...design.nodes.map((node) => node.position.x));
-    return { x: roundToGrid(maxX + ROD_LENGTH, Math.max(0.05, ROD_LENGTH / 2)), y: 0, z: 0 };
+    return { x: roundToGrid(maxX + ROD_LENGTH, Math.max(0.05, ROD_LENGTH)), y: 0, z: 0 };
   }
 
   document.querySelectorAll('[data-template]').forEach((button) => button.addEventListener('click', () => {
@@ -1117,26 +1127,59 @@ async function setupBrowserApp() {
 
   async function copyDesignLink() {
     const copied = await copyToClipboardWithFallback(makeDesignLink(window.location.href, design));
-    setMessage(copied ? 'Design link copied.' : 'Could not copy automatically. Use Download JSON instead.');
+    setMessage(copied ? 'Design link copied.' : 'Could not copy automatically. Use Save project instead.');
+  }
+
+  function closeMainMenu() {
+    document.querySelector('.main-menu')?.removeAttribute('open');
+  }
+
+  function newProject() {
+    rememberUndo();
+    setRodLength(2);
+    design = createEmptyDesign();
+    selected = [];
+    mode = 'add';
+    document.querySelector('#height').value = '0';
+    document.querySelector('#height-label').textContent = '0';
+    updateModeControls();
+    setMessage('New Fort Builder project started.');
+    closeMainMenu();
+    refreshScene();
   }
 
   function downloadDesignJson() {
     const blob = new Blob([serializeDesign(design)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'fort-kit-design.json';
+    link.download = 'fort-builder-project.json';
     link.click();
     URL.revokeObjectURL(link.href);
-    setMessage('JSON design downloaded.');
+    setMessage('Fort Builder project saved as JSON.');
   }
 
+  document.querySelector('#new-project').addEventListener('click', () => {
+    newProject();
+  });
+  document.querySelector('#open-project').addEventListener('click', () => {
+    document.querySelector('#file-input').click();
+    closeMainMenu();
+  });
+  document.querySelector('#save-project').addEventListener('click', () => {
+    downloadDesignJson();
+    closeMainMenu();
+  });
   document.querySelector('#copy-link').addEventListener('click', async () => {
     await copyDesignLink();
-    document.querySelector('.json-dropdown')?.removeAttribute('open');
+    closeMainMenu();
   });
-  document.querySelector('#download-json').addEventListener('click', () => {
-    downloadDesignJson();
-    document.querySelector('.json-dropdown')?.removeAttribute('open');
+  document.querySelector('#help-action').addEventListener('click', () => {
+    setMessage('Help: add balls on the grid, use Connect previews for valid rods, and use Project > Save/Open for JSON files.');
+    closeMainMenu();
+  });
+  document.querySelector('#update-action').addEventListener('click', () => {
+    setMessage(`Fort Builder v${APP_VERSION}: update checks are not connected yet.`);
+    closeMainMenu();
   });
 
   document.querySelector('#camera-view').addEventListener('change', (event) => {
@@ -1161,8 +1204,8 @@ async function setupBrowserApp() {
     design = deserializeDesign(await file.text());
     selected = [];
     event.target.value = '';
-    document.querySelector('.json-dropdown')?.removeAttribute('open');
-    setMessage('JSON design loaded.');
+    closeMainMenu();
+    setMessage('Fort Builder project opened.');
     refreshScene();
   });
 
