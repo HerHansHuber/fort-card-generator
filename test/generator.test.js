@@ -38,7 +38,13 @@ import {
   GRID_SIZE,
   GRID_DIVISIONS,
   FOG_NEAR,
-  FOG_FAR
+  FOG_FAR,
+  PROJECT_FILE_TYPE,
+  PROJECT_FILE_EXTENSION,
+  createProjectSnapshot,
+  serializeProjectFile,
+  restoreProjectFile,
+  readProjectFileText
 } from '../app.js';
 
 test.beforeEach(() => {
@@ -286,7 +292,7 @@ test('browser import map and controls exist', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.match(html, /<script type="importmap">/);
-  assert.match(html, /styles\.css\?v=fort-builder-menu/);
+  assert.match(html, /styles\.css\?v=project-files/);
   assert.match(html, /class="panel build-panel"/);
   assert.ok(html.indexOf('data-mode="add"') < html.indexOf('data-mode="connect"'));
   assert.ok(html.indexOf('data-mode="connect"') < html.indexOf('data-mode="delete"'));
@@ -301,7 +307,7 @@ test('browser import map and controls exist', () => {
   assert.match(html, /Undo last edit \(Ctrl\+Z\)/);
   assert.match(html, /Redo last undone edit \(Ctrl\+Y\)/);
   assert.match(html, /Changing this rescales every existing ball and stick/);
-  assert.match(html, /app\.js\?v=fort-builder-menu/);
+  assert.match(html, /app\.js\?v=project-files/);
   assert.match(app, /restoreUndoSnapshot\(undoHistory, redoHistory, design, selected\)/);
   assert.match(app, /restoreRedoSnapshot\(redoHistory, undoHistory, design, selected\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) === 'y'/);
@@ -322,7 +328,7 @@ test('top-left main menu exposes project actions and camera choices', () => {
   assert.match(html, /<button id="open-project"[^>]*>Open project…<\/button>/);
   assert.match(html, /<button id="save-project"[^>]*>Save project<\/button>/);
   assert.match(html, /<button id="copy-link"[^>]*>Copy design link<\/button>/);
-  assert.match(html, /id="file-input" type="file" accept="application\/json" hidden/);
+  assert.match(html, /id="file-input" type="file" accept="\.fort-builder\.json,application\/json,text\/json,\.json" hidden/);
   assert.doesNotMatch(html, /class="topbar-dropdown json-dropdown"/);
   assert.doesNotMatch(html, /<select id="json-menu"/);
   assert.doesNotMatch(app, /querySelector\('#json-menu'\)/);
@@ -452,4 +458,73 @@ test('main menu contains file, project, view, info, help, and update actions', (
   assert.match(app, /document\.querySelector\('#help-action'\)\.addEventListener\('click'/);
   assert.match(app, /document\.querySelector\('#update-action'\)\.addEventListener\('click'/);
   assert.match(app, /document\.querySelector\('#main-menu-info'\)\.textContent/);
+});
+
+test('project files round-trip complete designs and UI state across devices', () => {
+  const design = createEmptyDesign();
+  const selected = addCubeBay(design).slice(0, 2).map((node) => node.id);
+  const snapshot = createProjectSnapshot(design, {
+    selected,
+    mode: 'connect',
+    height: '2',
+    inventory: { balls: 42, sticks: 88 },
+    cameraView: 'side'
+  });
+  assert.equal(PROJECT_FILE_TYPE, 'fort-builder-project');
+  assert.equal(PROJECT_FILE_EXTENSION, '.fort-builder.json');
+  assert.equal(snapshot.type, PROJECT_FILE_TYPE);
+  assert.equal(snapshot.app, APP_NAME);
+  assert.equal(snapshot.design.nodes.length, 8);
+  const savedText = serializeProjectFile(design, {
+    selected,
+    mode: 'connect',
+    height: '2',
+    inventory: { balls: 42, sticks: 88 },
+    cameraView: 'side'
+  });
+  assert.match(savedText, /"type": "fort-builder-project"/);
+  assert.match(savedText, /"nodes"/);
+  const restored = restoreProjectFile(savedText);
+  assert.equal(restored.ok, true);
+  assert.equal(restored.design.nodes.length, 8);
+  assert.equal(restored.design.sticks.length, 12);
+  assert.deepEqual(restored.selected, selected);
+  assert.equal(restored.mode, 'connect');
+  assert.equal(restored.height, '2');
+  assert.deepEqual(restored.inventory, { balls: 42, sticks: 88 });
+  assert.equal(restored.cameraView, 'side');
+});
+
+test('project import accepts legacy raw designs, stored-state wrappers, share URLs, and data URLs', () => {
+  const design = createEmptyDesign();
+  addPitchedRoofBay(design, { x: 0, y: 1, z: 0 });
+  const raw = serializeDesign(design);
+  const state = JSON.stringify(createStoredState(design, {
+    selected: [1, 2],
+    mode: 'extrude',
+    height: '1',
+    inventory: { balls: 12, sticks: 20 },
+    cameraView: 'front'
+  }));
+  const shareUrl = makeDesignLink('https://example.test/fort-builder', design);
+  const dataUrl = `data:application/json;base64,${Buffer.from(raw, 'utf8').toString('base64')}`;
+  for (const source of [raw, state, shareUrl, dataUrl]) {
+    const restored = restoreProjectFile(source);
+    assert.equal(restored.ok, true, restored.reason);
+    assert.equal(restored.design.nodes.length, design.nodes.length);
+    assert.equal(restored.design.sticks.length, design.sticks.length);
+  }
+  assert.equal(restoreProjectFile('<!doctype html><title>Not a project</title>').ok, false);
+});
+
+test('browser save/open uses project serialization, mobile-safe file reading, and delayed blob revoke', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(html, /accept="\.fort-builder\.json,application\/json,text\/json,\.json"/);
+  assert.match(app, /serializeProjectFile\(design/);
+  assert.match(app, /readProjectFileText\(file\)/);
+  assert.match(app, /restoreProjectFile\(text\)/);
+  assert.match(app, /navigator\.share/);
+  assert.match(app, /setTimeout\(\(\) => URL\.revokeObjectURL\(url\), 30_000\)/);
+  assert.match(app, /FileReader/);
 });

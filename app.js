@@ -1,5 +1,5 @@
 export const APP_NAME = 'Fort Builder';
-export const APP_VERSION = '2.1.0';
+export const APP_VERSION = '2.2.0';
 export let ROD_LENGTH = 2;
 export const ROD_TOLERANCE = 0.08;
 export const SOCKET_ANGLE_TOLERANCE_DEG = 8;
@@ -17,6 +17,8 @@ export const FOG_NEAR = 36;
 export const FOG_FAR = 90;
 export const LOCAL_STORAGE_KEY = 'tiny-fort-generator-state-v1';
 export const CAMERA_VIEW_IDS = ['perspective', 'top', 'side', 'front'];
+export const PROJECT_FILE_TYPE = 'fort-builder-project';
+export const PROJECT_FILE_EXTENSION = '.fort-builder.json';
 
 const DEG = Math.PI / 180;
 
@@ -467,6 +469,83 @@ export function restoreStoredState(value) {
   } catch (error) {
     return { ok: false, reason: error.message };
   }
+}
+
+export function createProjectSnapshot(design, options = {}) {
+  return {
+    type: PROJECT_FILE_TYPE,
+    app: APP_NAME,
+    appVersion: APP_VERSION,
+    projectVersion: 1,
+    exportedAt: new Date().toISOString(),
+    ...createStoredState(design, options)
+  };
+}
+
+export function serializeProjectFile(design, options = {}) {
+  return JSON.stringify(createProjectSnapshot(design, options), null, 2);
+}
+
+function decodeBase64Utf8(value) {
+  if (typeof Buffer !== 'undefined') return Buffer.from(value, 'base64').toString('utf8');
+  return decodeURIComponent(escape(atob(value)));
+}
+
+function decodeDataUrl(text) {
+  const comma = text.indexOf(',');
+  if (comma < 0) throw new Error('Invalid data URL.');
+  const meta = text.slice(0, comma).toLowerCase();
+  const payload = text.slice(comma + 1);
+  return meta.includes(';base64') ? decodeBase64Utf8(payload) : decodeURIComponent(payload);
+}
+
+function restoreDesignAsState(design) {
+  return {
+    ok: true,
+    design,
+    selected: [],
+    mode: 'add',
+    height: '0',
+    inventory: { balls: 0, sticks: 0 },
+    cameraView: 'perspective'
+  };
+}
+
+export function restoreProjectFile(value) {
+  try {
+    let text = String(value ?? '').replace(/^\uFEFF/, '').trim();
+    if (!text) return { ok: false, reason: 'Project file is empty.' };
+
+    if (/^data:/i.test(text)) text = decodeDataUrl(text).trim();
+
+    if (/^https?:\/\//i.test(text)) {
+      const url = new URL(text);
+      const encodedDesign = url.searchParams.get('design');
+      if (!encodedDesign) return { ok: false, reason: 'Link does not contain a Fort Builder design.' };
+      return restoreDesignAsState(decodeFromUrl(encodedDesign));
+    }
+
+    const parsed = JSON.parse(text);
+    if (parsed.type && parsed.type !== PROJECT_FILE_TYPE) {
+      return { ok: false, reason: 'This is not a Fort Builder project file.' };
+    }
+    if (!parsed.design && !Array.isArray(parsed.nodes)) {
+      return { ok: false, reason: 'Project file does not contain a design.' };
+    }
+    return restoreStoredState(parsed);
+  } catch (error) {
+    return { ok: false, reason: `Could not read project file: ${error.message}` };
+  }
+}
+
+export function readProjectFileText(file) {
+  if (file?.text) return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read selected file.'));
+    reader.readAsText(file);
+  });
 }
 
 function addEdge(design, a, b) {
@@ -1148,14 +1227,47 @@ async function setupBrowserApp() {
     refreshScene();
   }
 
-  function downloadDesignJson() {
-    const blob = new Blob([serializeDesign(design)], { type: 'application/json' });
+  async function downloadDesignJson() {
+    const text = serializeProjectFile(design, {
+      selected,
+      mode,
+      height: document.querySelector('#height')?.value || '0',
+      inventory: currentInventory(),
+      cameraView
+    });
+    const fileName = `fort-builder-project${PROJECT_FILE_EXTENSION}`;
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const shareFile = typeof File !== 'undefined' ? new File([blob], fileName, { type: 'application/json' }) : null;
+
+    try {
+      if (shareFile && navigator.share && (!navigator.canShare || navigator.canShare({ files: [shareFile] }))) {
+        await navigator.share({
+          title: `${APP_NAME} project`,
+          text: 'Fort Builder project file',
+          files: [shareFile]
+        });
+        setMessage('Fort Builder project shared/saved.');
+        return;
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        setMessage('Project save/share cancelled.');
+        return;
+      }
+      // Fall back to the normal download path below.
+    }
+
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'fort-builder-project.json';
+    link.href = url;
+    link.download = fileName;
+    link.rel = 'noopener';
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(link.href);
-    setMessage('Fort Builder project saved as JSON.');
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    setMessage('Fort Builder project saved. If your phone shows a share sheet, save the .fort-builder.json file to Files/Downloads.');
   }
 
   document.querySelector('#new-project').addEventListener('click', () => {
@@ -1165,8 +1277,8 @@ async function setupBrowserApp() {
     document.querySelector('#file-input').click();
     closeMainMenu();
   });
-  document.querySelector('#save-project').addEventListener('click', () => {
-    downloadDesignJson();
+  document.querySelector('#save-project').addEventListener('click', async () => {
+    await downloadDesignJson();
     closeMainMenu();
   });
   document.querySelector('#copy-link').addEventListener('click', async () => {
@@ -1200,13 +1312,25 @@ async function setupBrowserApp() {
   document.querySelector('#file-input').addEventListener('change', async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    rememberUndo();
-    design = deserializeDesign(await file.text());
-    selected = [];
-    event.target.value = '';
-    closeMainMenu();
-    setMessage('Fort Builder project opened.');
-    refreshScene();
+    try {
+      const text = await readProjectFileText(file);
+      const result = restoreProjectFile(text);
+      if (!result.ok) throw new Error(result.reason);
+      rememberUndo();
+      design = result.design;
+      selected = result.selected || [];
+      applyStoredUi(result);
+      updateModeControls();
+      setCameraView(cameraView, { persist: false });
+      event.target.value = '';
+      closeMainMenu();
+      setMessage(`Fort Builder project opened: ${design.nodes.length} connectors and ${design.sticks.length} sticks.`);
+      refreshScene();
+    } catch (error) {
+      event.target.value = '';
+      closeMainMenu();
+      setMessage(`Could not open project: ${error.message}`);
+    }
   });
 
   document.querySelector('#undo').addEventListener('click', undoLastEdit);
